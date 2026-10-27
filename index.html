@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bitácora Inteligente de Reclamaciones</title>
+<style>
+:root{--navy:#17365d;--blue:#2364aa;--bg:#f3f6fa;--line:#d7e0eb;--red:#b42318;--amber:#9a6700;--green:#18794e}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 "Segoe UI",Arial,sans-serif;background:var(--bg);color:#1e293b}
+header{background:var(--navy);color:white;padding:22px max(18px,calc((100% - 1250px)/2))}header h1{margin:0 0 5px;font-size:24px}header p{margin:0;color:#dce8f6}
+main{max-width:1250px;margin:20px auto;padding:0 16px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+button,.filebtn{border:0;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;background:var(--blue);color:#fff}
+button.secondary,.filebtn.secondary{background:#e6edf5;color:#17365d}button.danger{background:#b42318}
+.tab.active{background:#17365d;color:#fff}.panel{display:none}.panel.active{display:block}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:15px;box-shadow:0 2px 8px #20344d0a}
+h2{font-size:18px;margin:0 0 14px;color:#17365d}h3{font-size:15px;margin:0 0 8px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.field{display:flex;flex-direction:column;gap:5px}.field.wide{grid-column:span 2}.field.full{grid-column:1/-1}
+label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:7px;padding:9px;background:#fff;font:inherit;color:#1e293b}textarea{min-height:75px;resize:vertical}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.muted{color:#64748b;font-size:12px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:15px}.stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:15px}.stat b{display:block;font-size:25px;color:var(--navy)}.stat span{font-size:12px;color:#64748b}
+.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:900px;background:white}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{background:#edf3f9;color:#17365d;font-size:12px;position:sticky;top:0}td{font-size:13px}.pill{display:inline-block;padding:3px 8px;border-radius:99px;font-size:11px;font-weight:700;background:#e7edf5}.pill.open{background:#fff0d4;color:#8a5700}.pill.closed{background:#dcfce7;color:#166534}.pill.urgent{background:#fee2e2;color:#991b1b}
+.alert{padding:12px;border-radius:8px;background:#fff4dd;border:1px solid #f2d28b;margin:10px 0}.alert.red{background:#fff0ef;border-color:#f1b6b1}.match{border-left:4px solid #d97706;padding:12px;margin:10px 0;background:#fffaf0;border-radius:6px}.match strong{color:#17365d}.hidden{display:none!important}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.grid{grid-template-columns:1fr}.field.wide{grid-column:span 1}.stats{grid-template-columns:1fr 1fr}}
+</style>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#17365d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+</head>
+<body>
+<header><h1>Bitácora Inteligente de Reclamaciones y Rechazos</h1><p>Registro de antecedentes · análisis del programa de producción · prevención de recurrencias</p></header>
+<main>
+<div class="stats">
+ <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
+ <div class="stat"><b id="openCount">0</b><span>Casos abiertos</span></div>
+ <div class="stat"><b id="overdueCount">0</b><span>Acciones vencidas</span></div>
+ <div class="stat"><b id="skuCount">0</b><span>SKU con antecedentes</span></div>
+</div>
+<div class="tabs">
+<button class="tab active" data-tab="registro">Registrar reclamación</button>
+<button class="tab secondary" data-tab="analisis">Analizar producción</button>
+<button class="tab secondary" data-tab="historial">Base de datos / historial</button>
+<button class="tab secondary" data-tab="catalogo">Catálogo maestro de SKU</button>
+</div>
+<section id="registro" class="panel active">
+<div class="card"><h2 id="formTitle">Nueva reclamación</h2>
+<form id="claimForm">
+<div class="grid">
+<div class="field"><label>Folio automático</label><input id="folio" readonly></div>
+<div class="field"><label>Fecha de registro *</label><input id="fecha" type="date" required></div>
+<div class="field"><label>SKU / código de producto *</label><input id="sku" required list="skuOptions" placeholder="Ej. 2-5-777"><datalist id="skuOptions"></datalist></div>
+<div class="field"><label>Cliente *</label><input id="cliente" required placeholder="Nombre del cliente"></div>
+<div class="field wide"><label>Motivo de rechazo *</label><input id="motivo" required placeholder="Ej. Core empalmado"></div>
+<div class="field wide"><label>Acción de contención *</label><textarea id="contencion" required placeholder="Qué se hizo para contener el rechazo"></textarea></div>
+<div class="field"><label>Área / proceso relacionado</label><select id="area"><option>Extrusión</option><option>Impresión</option><option>Laminación</option><option>Corte</option><option>Embarques</option><option>Calidad</option><option>Otro</option></select></div>
+<div class="field"><label>Responsable</label><input id="responsable" placeholder="Nombre / puesto"></div>
+<div class="field"><label>Fecha compromiso</label><input id="compromiso" type="date"></div>
+<div class="field"><label>Estatus</label><select id="estatus"><option>Abierta</option><option>En seguimiento</option><option>Cerrada</option></select></div>
+<div class="field full"><label>Indicación preventiva para producción *</label><textarea id="indicacion" required placeholder="Instrucción concreta que debe emitirse cuando el SKU vuelva a programarse"></textarea></div>
+<div class="field full"><label>Evidencia del rechazo (fotografía)</label><input id="evidencia" type="file" accept="image/*"><div id="evidenciaPreview" class="muted">No se ha adjuntado evidencia.</div></div>
+<div class="field full"><label>Notas / análisis de causa</label><textarea id="notas" placeholder="Causa probable, seguimiento, verificación y cierre"></textarea></div>
+</div>
+<div class="actions"><button type="submit">Guardar reclamación</button><button type="button" class="secondary" id="newBtn">Nuevo / limpiar</button></div>
+<p class="muted">Los registros se guardan en este navegador. Exporta periódicamente una copia CSV y un respaldo JSON.</p>
+</form></div>
+</section>
+<section id="analisis" class="panel">
+<div class="card"><h2>Analizar imagen del programa de producción</h2>
+<p>Adjunta una captura o fotografía legible del programa. La lectura OCR intenta extraer los SKU y busca coincidencias exactas con la base de reclamaciones y el catálogo maestro.</p>
+<div class="field"><label>Imágenes del programa de producción (máximo 4)</label><input type="file" id="programImage" accept="image/*" multiple><div class="muted">Puedes seleccionar hasta 4 imágenes en una sola operación. Se analizarán todas y se combinarán los SKU detectados.</div><div id="selectedImageCount" class="muted">0 de 4 imágenes seleccionadas</div></div>
+<div class="actions"><button id="analyzeBtn">Leer imagen y buscar SKU</button><button type="button" id="newSearchBtn" class="secondary">Nueva búsqueda</button><button id="manualBtn" class="secondary">Capturar SKU manualmente</button></div>
+<div id="ocrStatus" class="muted" style="margin-top:10px">OCR requiere conexión a internet para cargar el motor de reconocimiento.</div>
+<div id="manualBox" class="hidden" style="margin-top:12px"><label>SKU encontrados (separa por coma, espacio o salto de línea)</label><textarea id="manualSkus" placeholder="2-5-777, SKU-002"></textarea><div class="actions"><button id="searchManual">Buscar coincidencias</button></div></div>
+<div id="productionPreview" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px"></div><div id="ocrCandidatesBox" class="hidden" style="margin-top:12px"><label>SKU / códigos detectados (puedes corregirlos antes de buscar)</label><textarea id="ocrCandidates" rows="3" placeholder="Los códigos detectados aparecerán aquí"></textarea><textarea id="ocrRawText" class="hidden"></textarea><div class="actions"><button id="confirmOcrSkus">Confirmar códigos y buscar reclamaciones</button></div></div><div id="matches"></div>
+</div>
+<div class="card"><h2>Qué debe hacer el responsable</h2><p>Cuando exista coincidencia, validar el antecedente y comunicar la indicación preventiva al área correspondiente antes de liberar o iniciar la orden. La coincidencia automática es una alerta de apoyo; confirma visualmente el SKU leído antes de emitir instrucciones.</p></div>
+</section>
+<section id="historial" class="panel">
+<div class="card"><h2>Base de datos de reclamaciones</h2>
+<div class="grid">
+<div class="field"><label>Buscar por SKU, cliente o motivo</label><input id="filterText" placeholder="Buscar..."></div>
+<div class="field"><label>Estatus</label><select id="filterStatus"><option value="">Todos</option><option>Abierta</option><option>En seguimiento</option><option>Cerrada</option></select></div>
+<div class="field"><label>Importar catálogo CSV</label><input id="csvImport" type="file" accept=".csv,text/csv"></div>
+<div class="field"><label>Restaurar respaldo JSON</label><input id="jsonImport" type="file" accept=".json,application/json"></div>
+</div>
+<div class="actions"><button id="exportCsv">Exportar reclamaciones CSV</button><button id="exportJson" class="secondary">Respaldar todo (JSON)</button><button id="exportSku" class="secondary">Exportar catálogo SKU CSV</button></div>
+<div class="tablewrap" style="margin-top:15px"><table><thead><tr><th>Folio</th><th>Fecha</th><th>SKU</th><th>Cliente</th><th>Motivo</th><th>Acción / indicación</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th>Acciones</th></tr></thead><tbody id="claimRows"></tbody></table></div>
+</div>
+</section>
+<section id="catalogo" class="panel">
+<div class="card"><h2>Catálogo maestro de SKU</h2><p>Importa un CSV con columnas <b>sku, cliente, producto</b> (cliente y producto son opcionales). También puedes agregar SKU manualmente.</p>
+<div class="grid"><div class="field"><label>SKU</label><input id="newSku" placeholder="Código SKU"></div><div class="field"><label>Cliente</label><input id="newClient" placeholder="Cliente"></div><div class="field wide"><label>Descripción / producto</label><input id="newProduct" placeholder="Nombre del producto"></div></div>
+<div class="actions"><button id="addSku">Agregar SKU</button></div>
+<div class="tablewrap" style="margin-top:15px"><table><thead><tr><th>SKU</th><th>Cliente</th><th>Producto</th><th>Origen</th><th></th></tr></thead><tbody id="skuRows"></tbody></table></div>
+</div>
+</section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const KEY='bitacora_reclamaciones_v1';
+let db={claims:[],catalog:[]}, editing=null, evidenceData='';
+function load(){try{db=JSON.parse(localStorage.getItem(KEY))||db}catch(e){} if(!db.claims)db.claims=[];if(!db.catalog)db.catalog=[]}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function today(){return new Date().toISOString().slice(0,10)}
+function nextFolio(){let max=db.claims.reduce((m,c)=>Math.max(m,Number((c.folio||'').replace(/\D/g,''))||0),0);return 'REC-'+String(max+1).padStart(5,'0')}
+function normalizeSku(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
+function unique(a){return [...new Set(a.filter(Boolean))]}
+function allSkus(){return unique([...db.catalog.map(x=>x.sku),...db.claims.map(x=>x.sku)])}
+function render(){
+$('total').textContent=db.claims.length;$('openCount').textContent=db.claims.filter(c=>c.estatus!=='Cerrada').length;
+$('overdueCount').textContent=db.claims.filter(c=>c.estatus!=='Cerrada'&&c.compromiso&&c.compromiso<today()).length;
+$('skuCount').textContent=unique(db.claims.map(c=>normalizeSku(c.sku))).length;
+$('skuOptions').innerHTML=allSkus().map(s=>`<option value="${esc(s)}">`).join('');
+const q=($('filterText')?.value||'').toLowerCase(),st=$('filterStatus')?.value||'';
+$('claimRows').innerHTML=db.claims.filter(c=>(!st||c.estatus===st)&&(!q||[c.sku,c.cliente,c.motivo,c.folio].join(' ').toLowerCase().includes(q))).slice().reverse().map(c=>`<tr><td><b>${esc(c.folio)}</b></td><td>${esc(c.fecha)}</td><td>${esc(c.sku)}</td><td>${esc(c.cliente)}</td><td>${esc(c.motivo)}</td><td>${esc(c.contencion)}<hr>${esc(c.indicacion)}</td><td>${esc(c.responsable)}</td><td>${esc(c.compromiso)}${c.estatus!=='Cerrada'&&c.compromiso&&c.compromiso<today()?' <span class="pill urgent">VENCIDA</span>':''}</td><td><span class="pill ${c.estatus==='Cerrada'?'closed':'open'}">${esc(c.estatus)}</span></td><td><button class="secondary" onclick="editClaim('${esc(c.folio)}')">Editar</button> <button class="danger" onclick="deleteClaim('${esc(c.folio)}')">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="10">Sin registros. Captura la primera reclamación.</td></tr>';
+$('skuRows').innerHTML=db.catalog.map((s,i)=>`<tr><td>${esc(s.sku)}</td><td>${esc(s.cliente)}</td><td>${esc(s.producto)}</td><td>${esc(s.origen||'Manual')}</td><td><button class="danger" onclick="deleteSku(${i})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="5">Catálogo vacío; agrega SKU o importa un CSV.</td></tr>';
+}
+function clearForm(){editing=null;$('claimForm').reset();$('folio').value=nextFolio();$('fecha').value=today();evidenceData='';$('evidenciaPreview').textContent='No se ha adjuntado evidencia.';$('formTitle').textContent='Nueva reclamación'}
+$('evidencia').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{evidenceData=r.result;$('evidenciaPreview').innerHTML=`<img alt="Evidencia" src="${evidenceData}" style="max-width:220px;max-height:150px;display:block;margin-top:6px">`;};r.readAsDataURL(f)});
+$('claimForm').addEventListener('submit',e=>{e.preventDefault();const obj={folio:$('folio').value,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||''};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert('Reclamación guardada en la base local del navegador.')});
+window.editClaim=folio=>{const c=db.claims.find(x=>x.folio===folio);if(!c)return;editing=folio;for(const k of ['folio','fecha','sku','cliente','motivo','contencion','area','responsable','compromiso','estatus','indicacion','notas'])$(k).value=c[k]||'';evidenceData=c.evidencia||'';$('evidenciaPreview').innerHTML=evidenceData?`<img src="${evidenceData}" style="max-width:220px;max-height:150px">`:'No se ha adjuntado evidencia.';$('formTitle').textContent='Editar '+folio;switchTab('registro');window.scrollTo({top:0,behavior:'smooth'})};
+window.deleteClaim=folio=>{if(confirm('¿Eliminar '+folio+'? Esta acción no se puede deshacer.')){db.claims=db.claims.filter(c=>c.folio!==folio);save()}};
+window.deleteSku=i=>{if(confirm('¿Eliminar este SKU del catálogo?')){db.catalog.splice(i,1);save()}};
+$('newBtn').onclick=clearForm;
+function switchTab(id){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===id));document.querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.dataset.tab===id);b.classList.toggle('secondary',b.dataset.tab!==id)})}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+$('filterText').addEventListener('input',render);$('filterStatus').addEventListener('change',render);
+$('addSku').onclick=()=>{let sku=$('newSku').value.trim();if(!sku)return alert('Captura el SKU.');if(db.catalog.some(x=>normalizeSku(x.sku)===normalizeSku(sku)))return alert('Ese SKU ya existe en el catálogo.');db.catalog.push({sku,cliente:$('newClient').value.trim(),producto:$('newProduct').value.trim(),origen:'Manual'});$('newSku').value='';$('newClient').value='';$('newProduct').value='';save()};
+function download(name,content,type='text/plain'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
+function csv(rows){const keys=rows.length?Object.keys(rows[0]):[];const val=v=>'"'+String(v??'').replace(/"/g,'""')+'"';return [keys.map(val).join(','),...rows.map(r=>keys.map(k=>val(k==='evidencia'?'[imagen adjunta en respaldo JSON]':r[k])).join(','))].join('\r\n')}
+$('exportCsv').onclick=()=>download('reclamaciones.csv','\ufeff'+csv(db.claims),'text/csv;charset=utf-8');
+$('exportSku').onclick=()=>download('catalogo_sku.csv','\ufeff'+csv(db.catalog),'text/csv;charset=utf-8');
+$('exportJson').onclick=()=>download('respaldo_bitacora.json',JSON.stringify(db,null,2),'application/json');
+function parseCSV(text){let rows=[],row=[],v='',q=false;for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'&&q&&text[i+1]==='"'){v+='"';i++}else if(c==='"')q=!q;else if(c===','&&!q){row.push(v);v=''}else if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&text[i+1]==='\n')i++;row.push(v);if(row.some(x=>x.trim()))rows.push(row);row=[];v=''}else v+=c}row.push(v);if(row.some(x=>x.trim()))rows.push(row);return rows}
+$('csvImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;const rows=parseCSV((await f.text()).replace(/^\ufeff/,''));if(rows.length<2)return alert('El CSV no contiene filas de datos.');const headers=rows.shift().map(x=>x.trim().toLowerCase());const ix=key=>headers.indexOf(key);const si=ix('sku');if(si<0)return alert('El CSV debe tener una columna llamada sku.');let n=0;rows.forEach(r=>{const sku=(r[si]||'').trim();if(sku&&!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(sku))){db.catalog.push({sku,cliente:r[ix('cliente')]||'',producto:r[ix('producto')]||'',origen:'Importado CSV'});n++}});save();alert('SKU agregados: '+n);e.target.value=''};
+$('jsonImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const incoming=JSON.parse(await f.text());if(!Array.isArray(incoming.claims)||!Array.isArray(incoming.catalog))throw 0;if(confirm('¿Reemplazar los datos actuales con el respaldo?')){db=incoming;save();clearForm();alert('Respaldo restaurado.')}}catch(err){alert('No se pudo leer el respaldo JSON.')}e.target.value=''};
+function levenshtein(a,b){const dp=Array.from({length:b.length+1},(_,i)=>[i]);for(let j=1;j<=a.length;j++)dp[0][j]=j;for(let i=1;i<=b.length;i++)for(let j=1;j<=a.length;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(b[i-1]===a[j-1]?0:1));return dp[b.length][a.length]}
+function matchSkus(tokens,ocrText=''){
+ const catalog=allSkus(), claimsBySku=new Map();
+ for(const c of db.claims){const k=normalizeSku(c.sku);if(!claimsBySku.has(k))claimsBySku.set(k,[]);claimsBySku.get(k).push(c)}
+ const candidates=unique(tokens.map(t=>String(t).trim()).filter(t=>normalizeSku(t).length>=3));
+ const textNorm=normalizeSku(ocrText); const matched=new Map();
+ // Coincidencia exacta por token, tolerando guiones, puntos y espacios.
+ for(const sku of catalog){const ns=normalizeSku(sku);if(!ns)continue;
+   let hit=candidates.some(t=>normalizeSku(t)===ns);
+   // Si OCR separó el código en varios fragmentos, busca el SKU dentro del texto concatenado.
+   if(!hit && textNorm.includes(ns))hit=true;
+   // Corrección conservadora de 1 carácter para SKU de 5+ caracteres; requiere revisar visualmente.
+   if(!hit && ns.length>=5){hit=candidates.some(t=>{const nt=normalizeSku(t);return nt.length>=ns.length-1&&nt.length<=ns.length+1&&levenshtein(ns,nt)<=1})}
+   if(hit){const cases=claimsBySku.get(ns)||[];if(cases.length)matched.set(ns,{sku,claims:cases})}
+ }
+ return [...matched.values()];
+}
+function showMatches(tokens,ocrText=''){
+ const found=matchSkus(tokens,ocrText);$('matches').innerHTML='';
+ if(ocrText)$('matches').insertAdjacentHTML('beforeend',`<details><summary>Texto reconocido por OCR</summary><pre style="white-space:pre-wrap">${esc(ocrText.slice(0,6000))}</pre></details>`);
+ if(!found.length){$('matches').insertAdjacentHTML('beforeend','<div class="alert">No se encontraron SKU con reclamaciones previas entre los códigos confirmados. Revisa la lista de códigos detectados, corrige errores del OCR y vuelve a buscar. También confirma que el SKU esté registrado en la bitácora.</div>');return}
+ $('matches').insertAdjacentHTML('beforeend',`<div class="alert red"><b>¡Atención preventiva!</b> Se encontraron ${found.length} SKU con antecedentes. Confirma visualmente cada código antes de emitir instrucciones.</div>`);
+ found.forEach(x=>{const cases=x.claims.slice().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));$('matches').insertAdjacentHTML('beforeend',`<div class="match"><strong>SKU ${esc(x.sku)}</strong> · ${cases.length} antecedente(s) <div>${cases.map(c=>`<p><b>${esc(c.folio)} — ${esc(c.cliente)}</b><br>Motivo: ${esc(c.motivo)}<br>Contención: ${esc(c.contencion)}<br><b>Indicación preventiva:</b> ${esc(c.indicacion)}<br>Área: ${esc(c.area)} · Responsable: ${esc(c.responsable||'Sin asignar')} · Estatus: ${esc(c.estatus)}</p>`).join('<hr>')}</div></div>`)})
+}
+function makeOcrCanvas(file,cropLeft=false){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{const scale=3;const sx=0,sy=0,sw=cropLeft?Math.max(1,Math.floor(img.width*.42)):img.width,sh=img.height;const c=document.createElement('canvas');c.width=Math.round(sw*scale);c.height=Math.round(sh*scale);const ctx=c.getContext('2d');ctx.drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);const im=ctx.getImageData(0,0,c.width,c.height);for(let i=0;i<im.data.length;i+=4){const gray=.299*im.data[i]+.587*im.data[i+1]+.114*im.data[i+2];const v=gray>175?255:Math.max(0,gray-15);im.data[i]=im.data[i+1]=im.data[i+2]=v;}ctx.putImageData(im,0,0);resolve(c)};img.onerror=reject;img.src=URL.createObjectURL(file)})}
+$('confirmOcrSkus').onclick=()=>{const tokens=$('ocrCandidates').value.split(/[\s,;|]+/).filter(Boolean);showMatches(tokens,$('ocrRawText')?.value||'')};
+$('newSearchBtn').onclick=()=>{
+  // Limpia únicamente la búsqueda actual; conserva la base de reclamaciones y el catálogo.
+  $('programImage').value='';
+  $('selectedImageCount').textContent='0 de 4 imágenes seleccionadas';
+  $('productionPreview').innerHTML='';
+  $('matches').innerHTML='';
+  $('ocrCandidatesBox').classList.add('hidden');
+  $('ocrCandidates').value='';
+  $('ocrRawText').value='';
+  $('manualSkus').value='';
+  $('manualBox').classList.add('hidden');
+  $('ocrStatus').textContent='Listo para una nueva búsqueda. Adjunta hasta 4 imágenes del programa de producción.';
+  $('programImage').focus();
+};
+$('manualBtn').onclick=()=>$('manualBox').classList.toggle('hidden');
+$('searchManual').onclick=()=>{const tokens=$('manualSkus').value.split(/[\s,;|]+/).filter(Boolean);showMatches(tokens)};
+$('programImage').addEventListener('change',()=>{const files=[...$('programImage').files];$('selectedImageCount').textContent=`${files.length} de 4 imágenes seleccionadas`;if(files.length>4){$('ocrStatus').textContent='Seleccionaste más de 4 imágenes. Solo se analizarán las primeras 4.';}$('productionPreview').innerHTML=files.slice(0,4).map((f,i)=>`<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#fff"><div style="font-weight:600;font-size:12px;margin-bottom:6px">Imagen ${i+1}: ${esc(f.name)}</div><img alt="Vista previa ${i+1}" src="${URL.createObjectURL(f)}" style="width:100%;max-height:220px;object-fit:contain"></div>`).join('')});
+$('analyzeBtn').onclick=async()=>{const files=[...$('programImage').files].slice(0,4);if(!files.length)return alert('Adjunta al menos una imagen del programa.');if($('programImage').files.length>4)alert('Se seleccionaron más de 4 imágenes; se analizarán únicamente las primeras 4.');$('ocrStatus').textContent=`Preparando ${files.length} imagen(es) y buscando la columna de SKU…`;$('matches').innerHTML='';$('ocrCandidatesBox').classList.remove('hidden');try{if(!window.Tesseract)throw Error('No se pudo cargar el motor OCR. Comprueba tu conexión a internet.');let texts=[];for(let i=0;i<files.length;i++){const f=files[i];$('ocrStatus').textContent=`Imagen ${i+1} de ${files.length}: leyendo imagen ampliada…`;const opts={logger:m=>{if(m.status)$('ocrStatus').textContent=`Imagen ${i+1}/${files.length}: `+m.status+(m.progress!=null?' '+Math.round(m.progress*100)+'%':'')}};const full=await makeOcrCanvas(f,false);const r1=await Tesseract.recognize(full,'eng',opts);texts.push(`--- IMAGEN ${i+1}: ${f.name} / LECTURA COMPLETA ---\n${r1.data.text||''}`);$('ocrStatus').textContent=`Imagen ${i+1} de ${files.length}: revisando zona izquierda de la tabla…`;const left=await makeOcrCanvas(f,true);const r2=await Tesseract.recognize(left,'eng',opts);texts.push(`--- IMAGEN ${i+1}: ${f.name} / SEGUNDA LECTURA ZONA IZQUIERDA ---\n${r2.data.text||''}`)}const txt=texts.join('\n');const candidates=unique((txt.match(/[A-Z0-9][A-Z0-9._/-]{2,}/gi)||[]).concat(txt.match(/\b\d{3,}(?:[-/.][A-Z0-9]+)*\b/g)||[]));$('ocrCandidates').value=candidates.join(', ');$('ocrRawText').value=txt;$('ocrStatus').textContent=`Lectura terminada: se analizaron ${files.length} imagen(es), con dos pasadas por imagen. Revisa y corrige los SKU detectados y pulsa “Confirmar códigos y buscar reclamaciones”.` ;showMatches(candidates,txt)}catch(err){$('ocrStatus').textContent='No fue posible ejecutar OCR automáticamente. Usa la captura manual de SKU. Detalle: '+err.message;$('manualBox').classList.remove('hidden')}};
+load();clearForm();render();
+</script>
+<script>
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(err => console.warn("No se pudo registrar el modo instalable:", err)));
+}
+</script>
+
+</body></html>

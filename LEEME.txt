@@ -1,23 +1,22 @@
-BITÁCORA INTELIGENTE DE RECLAMACIONES — APLICACIÓN INSTALABLE
+BITÁCORA INTELIGENTE DE RECLAMACIONES — PAQUETE PWA
 
-Incluye:
-- index.html: aplicación con el botón Nueva búsqueda.
-- manifest.webmanifest: nombre e iconos de instalación.
-- service-worker.js: caché para abrir la app como PWA tras la primera carga.
-- icons/: iconos para PC y celulares.
+CONTENIDO
+- index.html: aplicación web de reclamaciones, historial, catálogo SKU y análisis de hasta 4 imágenes.
+- manifest.webmanifest: configuración de instalación PWA.
+- service-worker.js: caché de archivos principales para modo instalable.
+- icons/: iconos SVG de 192 y 512 px.
+- .github/workflows/deploy.yml: publicación automatizada con GitHub Pages.
 
-IMPORTANTE: Para instalarla como aplicación PWA, primero debe publicarse en una dirección HTTPS. Abrir index.html directamente desde el disco permite usarla como página, pero no habilita la instalación PWA.
+PUBLICAR LA APLICACIÓN
+1. En GitHub abre Settings > Pages.
+2. En Build and deployment, selecciona Source: GitHub Actions.
+3. Confirma que Actions tenga permisos para publicar Pages en Settings > Actions > General, si GitHub lo solicita.
+4. En Actions, ejecuta el flujo "Deploy Bitácora PWA" o espera el siguiente commit.
+5. Cuando termine en verde, abre la URL que muestra Settings > Pages. La dirección será HTTPS.
 
-PUBLICAR GRATIS CON GITHUB PAGES
-1. Descomprime el ZIP.
-2. Crea un repositorio en GitHub, por ejemplo: bitacora-calidad.
-3. Sube TODOS los archivos y la carpeta icons a la raíz del repositorio.
-4. En Settings > Pages, activa publicación desde la rama main y carpeta / (root).
-5. Espera la URL HTTPS que proporciona GitHub Pages.
-
-INSTALAR EN PC
-1. Abre la URL HTTPS en Chrome o Edge.
-2. Pulsa el icono Instalar aplicación de la barra de direcciones o abre el menú y elige Instalar Bitácora Calidad.
+INSTALAR EN WINDOWS / PC
+1. Abre la URL HTTPS en Chrome o Microsoft Edge.
+2. Pulsa el icono Instalar en la barra de direcciones, o menú > Instalar Bitácora Calidad.
 
 INSTALAR EN ANDROID
 1. Abre la URL HTTPS en Chrome.
@@ -27,6 +26,8 @@ INSTALAR EN IPHONE
 1. Abre la URL HTTPS en Safari.
 2. Compartir > Agregar a pantalla de inicio.
 
-DATOS Y OCR
-La aplicación guarda los registros en localStorage del navegador y dispositivo actual. No sincroniza automáticamente los datos entre PC y celular; para eso hace falta una base de datos en la nube.
-El motor OCR se carga desde una biblioteca externa, por lo que el primer análisis requiere internet. No se garantiza OCR completamente sin conexión.
+IMPORTANTE SOBRE DATOS
+La versión actual guarda los registros en localStorage del navegador/dispositivo. No sincroniza automáticamente entre PC y teléfono. Exporta respaldos JSON con frecuencia. Para uso multiusuario y sincronización se requiere integrar autenticación y una base de datos en la nube.
+
+OCR
+El motor OCR se carga desde una biblioteca externa (requiere conexión a internet para cargarlo la primera vez). Revisa visualmente los SKU detectados antes de emitir indicaciones preventivas.

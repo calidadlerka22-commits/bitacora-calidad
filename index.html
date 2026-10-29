@@ -119,13 +119,17 @@ function load(){try{db=JSON.parse(localStorage.getItem(KEY))||db}catch(e){} if(!
 function setSyncStatus(message,isError=false){const el=$('syncBar');if(el){el.textContent=message;el.classList.toggle('red',!!isError)}}
 function save(){localStorage.setItem(KEY,JSON.stringify(db));render();if(cloudUser)queueCloudSave()}
 function stableJson(value){
- if(Array.isArray(value))return '['+value.map(stableJson).join(',')+']';
- if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableJson(value[k])).join(',')+'}';
+ if(value===null)return 'null';
+ if(Array.isArray(value))return '['+value.map(v=>stableJson(v===undefined?null:v)).join(',')+']';
+ if(value&&typeof value==='object')return '{'+Object.keys(value).filter(k=>value[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stableJson(value[k])).join(',')+'}';
  return JSON.stringify(value);
 }
 function syncFingerprint(value){
- const clean={claims:(value?.claims||[]).slice().sort((a,b)=>String(a.folio||'').localeCompare(String(b.folio||''))),catalog:(value?.catalog||[]).slice().sort((a,b)=>normalizeSku(a.sku).localeCompare(normalizeSku(b.sku))),_resetToken:value?._resetToken||''};
- return stableJson(clean);
+ // JSON round-trip mirrors exactly what Postgres JSONB can store (no undefined values).
+ const src=JSON.parse(JSON.stringify({claims:Array.isArray(value?.claims)?value.claims:[],catalog:Array.isArray(value?.catalog)?value.catalog:[],_resetToken:value?._resetToken||''}));
+ src.claims.sort((a,b)=>String(a.folio||'').localeCompare(String(b.folio||'')));
+ src.catalog.sort((a,b)=>normalizeSku(a.sku).localeCompare(normalizeSku(b.sku)));
+ return stableJson(src);
 }
 function mergeData(a,b){
  const byFolio=new Map();
@@ -205,13 +209,25 @@ async function syncFromCloud(){
    }).select('id').single();
    if(writeError)throw writeError;
   }
-  const {data:verifyRow,error:verifyError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).single();
-  if(verifyError)throw verifyError;
-  const confirmed=verifyRow?.payload||{claims:[],catalog:[]};
-  if(syncFingerprint(confirmed)!==wanted)throw new Error('Los datos leídos después del guardado no coinciden con los enviados.');
-  db=mergeData(confirmed,db);localStorage.setItem(KEY,JSON.stringify(db));render();
+  let confirmed=null,verifyError=null;
+  // Leer de nuevo hasta 3 veces para cubrir la latencia de confirmación del servicio.
+  for(let attempt=0;attempt<3;attempt++){
+   const result=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).single();
+   verifyError=result.error;
+   if(verifyError)throw verifyError;
+   confirmed=result.data?.payload||{claims:[],catalog:[]};
+   if(syncFingerprint(confirmed)===wanted)break;
+   if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
+  }
+  if(syncFingerprint(confirmed)!==wanted){
+   const sentClaims=(db.claims||[]).length,readClaims=(confirmed.claims||[]).length;
+   throw new Error('La nube conserva '+readClaims+' reclamaciones y el dispositivo envió '+sentClaims+'. Revisa permisos o conexión; no se sustituyeron tus datos locales.');
+  }
+  // La copia confirmada de la nube pasa a ser la base local compartida.
+  db={claims:confirmed.claims||[],catalog:confirmed.catalog||[],_resetToken:confirmed._resetToken||''};
+  localStorage.setItem(KEY,JSON.stringify(db));render();
   lastCloudJson=syncFingerprint(confirmed);
-  setSyncStatus('Sincronizado y verificado · '+new Date().toLocaleTimeString()+' · '+confirmed.claims.length+' reclamaciones compartidas');
+  setSyncStatus('Sincronización confirmada · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones compartidas');
  }catch(err){
   setSyncStatus('SIN CONFIRMAR: '+(err.message||String(err))+' · los datos locales se conservan.',true);
  }finally{

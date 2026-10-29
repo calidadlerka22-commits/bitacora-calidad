@@ -188,6 +188,7 @@ async function queueCloudSave(){
   const confirmed=checkRow?.payload||{claims:[],catalog:[]};
   const coverage=syncCoverage(db,confirmed);
   if(!coverage.ok)throw new Error('La nube no confirmó '+[...coverage.missingClaims.map(x=>'folio '+x),...coverage.missingSkus.map(x=>'SKU '+x)].slice(0,8).join(', ')+'. Los datos locales se conservaron.');
+  if(syncFingerprint(confirmed)!==syncFingerprint(db))throw new Error('El servidor recibió la solicitud, pero el contenido completo aún no coincide. Vuelve a sincronizar; tus datos locales se conservaron.');
   db=mergeData(confirmed,db);localStorage.setItem(KEY,JSON.stringify(db));render();
   lastCloudJson=syncFingerprint(confirmed);
   setSyncStatus('Sincronización verificada · '+new Date().toLocaleTimeString()+' · '+confirmed.claims.length+' reclamaciones en la nube');
@@ -236,6 +237,7 @@ async function syncFromCloud(){
    const details=[...coverage.missingClaims.map(x=>'folio '+x),...coverage.missingSkus.map(x=>'SKU '+x)];
    throw new Error('La nube todavía no confirma: '+details.slice(0,8).join(', ')+'. No se borraron los datos locales.');
   }
+  if(syncFingerprint(confirmed)!==wanted)throw new Error('La nube no confirmó todos los cambios del registro. Vuelve a pulsar Sincronizar ahora; tus datos locales se conservaron.');
   // La copia confirmada de la nube pasa a ser la base local compartida.
   db={claims:confirmed.claims||[],catalog:confirmed.catalog||[],_resetToken:confirmed._resetToken||''};
   localStorage.setItem(KEY,JSON.stringify(db));render();

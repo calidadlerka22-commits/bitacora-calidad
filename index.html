@@ -125,9 +125,15 @@ function stableJson(value){
  return JSON.stringify(value);
 }
 function syncFingerprint(value){
- const claims=new Set((value?.claims||[]).filter(x=>x?.folio).map(x=>String(x.folio).trim().toUpperCase()));
- const skus=new Set((value?.catalog||[]).filter(x=>x?.sku).map(x=>normalizeSku(x.sku)).filter(Boolean));
- return stableJson({claims:[...claims].sort(),catalog:[...skus].sort(),_resetToken:value?._resetToken||''});
+ // Comparar el contenido COMPLETO, no solo la existencia de folios/SKU.
+ // Detecta ediciones de campos, estatus, notas y datos del catálogo.
+ const claims=(value?.claims||[]).filter(x=>x?.folio)
+  .map(x=>({...x,folio:String(x.folio).trim().toUpperCase()}))
+  .sort((a,b)=>a.folio.localeCompare(b.folio));
+ const catalog=(value?.catalog||[]).filter(x=>x?.sku)
+  .map(x=>({...x,sku:normalizeSku(x.sku)}))
+  .sort((a,b)=>a.sku.localeCompare(b.sku));
+ return stableJson({claims,catalog,_resetToken:value?._resetToken||''});
 }
 function syncCoverage(sent,received){
  const remoteClaims=new Set((received?.claims||[]).map(x=>String(x?.folio||'').trim().toUpperCase()));

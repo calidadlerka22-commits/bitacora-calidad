@@ -183,10 +183,18 @@ async function syncFromCloud(){
   localStorage.setItem(KEY,JSON.stringify(db));
   render();
   const snapshot=JSON.stringify(db);
-  // Polling is read-only. Only explicit local saves write to Supabase;
-  // otherwise polling can cause write loops and overwrite concurrent changes.
-  lastCloudJson=JSON.stringify(remote);
-  setSyncStatus('Nube consultada · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
+  const remoteSnapshot=JSON.stringify(remote);
+  // Reconciliar ambos dispositivos: si la copia local contiene registros o
+  // cambios que aún no están en la nube, publicar la combinación una sola vez.
+  if(snapshot!==remoteSnapshot){
+   setSyncStatus('Sincronizando cambios de este dispositivo con la nube…');
+   const {error:writeError}=await cloudClient.from(CLOUD_TABLE).upsert({
+    id:1,payload:db,updated_at:new Date().toISOString(),updated_by:cloudUser.id
+   }).select('id');
+   if(writeError)throw writeError;
+  }
+  lastCloudJson=snapshot;
+  setSyncStatus('Sincronizado · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
  }catch(err){
   setSyncStatus('Error al leer Supabase: '+(err.message||String(err))+' · los datos locales se conservan.',true);
  }finally{

@@ -130,31 +130,61 @@ function mergeData(a,b){
  const catalog=new Map();[...(a.catalog||[]),...(b.catalog||[])].forEach(s=>{if(s&&s.sku){const k=normalizeSku(s.sku);if(!catalog.has(k))catalog.set(k,s)}});
  return {claims,catalog:[...catalog.values()]};
 }
-function queueCloudSave(){
+async function queueCloudSave(){
  if(!cloudClient||!cloudUser)return;
- const snapshot=JSON.stringify(db);
- if(cloudBusy)return;
- if(snapshot===lastCloudJson)return;
+ if(cloudBusy){cloudSavePending=true;return}
  cloudBusy=true;
- setSyncStatus('Guardando cambios en la nube…');
- const payload=JSON.parse(snapshot);
- cloudClient.from(CLOUD_TABLE).upsert({id:1,payload,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').then(({error})=>{
-  cloudBusy=false;
-  if(error){setSyncStatus('Error al sincronizar: '+error.message+'. Los cambios siguen guardados localmente; revisa la configuración SQL.',true);return}
+ try{
+  setSyncStatus('Comprobando cambios en la nube…');
+  const localSnapshot=JSON.parse(JSON.stringify(db));
+  const {data:remoteRow,error:readError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).maybeSingle();
+  if(readError)throw readError;
+  const remotePayload=remoteRow&&remoteRow.payload?remoteRow.payload:{claims:[],catalog:[]};
+  const merged=mergeData(remotePayload,localSnapshot);
+  db=merged;
+  localStorage.setItem(KEY,JSON.stringify(db));
+  render();
+  const snapshot=JSON.stringify(db);
+  if(snapshot!==JSON.stringify(remotePayload)){
+   setSyncStatus('Guardando registros combinados en la nube…');
+   const {error:writeError}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:db,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id');
+   if(writeError)throw writeError;
+  }
   lastCloudJson=snapshot;
-  if(JSON.stringify(db)!==snapshot){setSyncStatus('Hay cambios nuevos; guardando pendientes…');queueCloudSave()}
-  else setSyncStatus('Sincronizado con Supabase · '+new Date().toLocaleTimeString());
- }).catch(err=>{cloudBusy=false;setSyncStatus('No se pudo sincronizar. Los cambios siguen en este dispositivo: '+err.message,true)});
+  setSyncStatus('Sincronizado con Supabase · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
+ }catch(err){
+  setSyncStatus('Error de sincronización: '+(err.message||String(err))+' · los datos locales se conservan.',true);
+ }finally{
+  cloudBusy=false;
+  if(cloudSavePending){cloudSavePending=false;queueCloudSave()}
+ }
 }
+let cloudSavePending=false;
 async function syncFromCloud(){
- if(!cloudClient||!cloudUser||cloudBusy)return;
- const {data,error}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).maybeSingle();
- if(error){setSyncStatus('No se pudo leer la nube: '+error.message+'. Revisa que hayas ejecutado supabase-setup.sql.',true);return}
- const local=JSON.parse(localStorage.getItem(KEY)||'{"claims":[],"catalog":[]}');
- if(data&&data.payload){
-  db=mergeData(data.payload,local);localStorage.setItem(KEY,JSON.stringify(db));render();lastCloudJson=JSON.stringify(data.payload);
-  if(JSON.stringify(db)!==lastCloudJson)queueCloudSave();else setSyncStatus('Conectado y sincronizado · '+new Date().toLocaleTimeString());
- }else{db=mergeData({claims:[],catalog:[]},local);localStorage.setItem(KEY,JSON.stringify(db));queueCloudSave();setSyncStatus('No hay datos en la nube todavía. Subiendo los registros locales…')}
+ if(!cloudClient||!cloudUser||cloudBusy){if(cloudBusy)cloudSavePending=true;return}
+ cloudBusy=true;
+ try{
+  const {data,error}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).maybeSingle();
+  if(error)throw error;
+  const local=JSON.parse(localStorage.getItem(KEY)||'{"claims":[],"catalog":[]}');
+  const remote=data&&data.payload?data.payload:{claims:[],catalog:[]};
+  db=mergeData(remote,local);
+  localStorage.setItem(KEY,JSON.stringify(db));
+  render();
+  const snapshot=JSON.stringify(db);
+  if(snapshot!==JSON.stringify(remote)){
+   cloudBusy=false;
+   await queueCloudSave();
+   return;
+  }
+  lastCloudJson=snapshot;
+  setSyncStatus('Conectado y sincronizado · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
+ }catch(err){
+  setSyncStatus('Error al leer Supabase: '+(err.message||String(err))+' · los datos locales se conservan.',true);
+ }finally{
+  cloudBusy=false;
+  if(cloudSavePending){cloudSavePending=false;queueCloudSave()}
+ } 
 }
 async function startCloudSession(){
  const {data:{session},error}=await cloudClient.auth.getSession();if(error){$('cloudMessage').textContent='Error de autenticación: '+error.message;return}

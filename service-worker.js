@@ -1,4 +1,4 @@
-const CACHE_NAME = "bitacora-calidad-v18";
+const CACHE_NAME = "bitacora-calidad-v19";
 const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.svg", "./icons/icon-512.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
@@ -12,15 +12,27 @@ self.addEventListener("activate", event => {
   })());
 });
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(caches.match(event.request).then(cached => {
-    if (cached) return cached;
-    return fetch(event.request).then(response => {
-      if (response && response.status === 200 && (response.type === "basic" || response.type === "cors")) {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  // Nunca interceptar ni almacenar respuestas de Supabase, CDN ni otros servidores.
+  // La base de datos siempre debe consultarse en la red.
+  if (url.origin !== self.location.origin) return;
+  // Solo usar caché para el shell estático de la aplicación.
+  const isAppShell = request.mode === "navigate" ||
+    /\\.(html|css|js|webmanifest|svg|png|ico)$/i.test(url.pathname);
+  if (!isAppShell) return;
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(request, { cache: "no-store" });
+      if (response && response.status === 200) {
         const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)).catch(() => {});
+        caches.open(CACHE_NAME).then(cache => cache.put(request, copy)).catch(() => {});
       }
       return response;
-    }).catch(() => caches.match("./index.html"));
-  }));
+    } catch (error) {
+      const cached = await caches.match(request);
+      return cached || caches.match("./index.html");
+    }
+  })());
 });

@@ -336,7 +336,7 @@ $('analyzeBtn').onclick=async()=>{const files=[...$('programImage').files].slice
 load();clearForm();render();
 try{
  if(!window.supabase||!window.supabase.createClient)throw new Error('No se pudo cargar la biblioteca de conexión. Recarga la página.');
- cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+ cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{global:{fetch:(input,init={})=>fetch(input,{...init,cache:'no-store'})}});
  $('cloudLogin').addEventListener('submit',async e=>{e.preventDefault();$('cloudMessage').textContent='Validando acceso…';const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){$('cloudMessage').textContent='No se pudo iniciar sesión: '+error.message;return}cloudUser=data.user;$('cloudMessage').textContent='Acceso correcto.';await startCloudSession()});
  $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
  $('resetAllBtn').addEventListener('click',async()=>{

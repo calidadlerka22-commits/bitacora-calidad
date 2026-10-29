@@ -38,7 +38,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <div class="actions"><button type="submit">Iniciar sesión y sincronizar</button></div></form>
 <p id="cloudMessage" role="status" class="muted">Conexión preparada; esperando inicio de sesión.</p>
 <p class="muted">Si todavía no tienes usuario, créalo en Supabase → Authentication → Users → Add user. No compartas aquí tu contraseña.</p></section>
-<div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div>
+<div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div><div class="actions" style="margin:0 0 12px"><button id="syncNowBtn" type="button" class="secondary">Sincronizar ahora</button></div>
 <div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><button id="resetAllBtn" type="button" class="danger">Reiniciar todos los registros</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
 <main><div class="stats">
  <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
@@ -56,7 +56,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <div class="card"><h2 id="formTitle">Nueva reclamación</h2>
 <form id="claimForm">
 <div class="grid">
-<div class="field"><label>Folio automático</label><input id="folio" readonly></div>
+<div class="field"><label>Folio manual *</label><input id="folio" required placeholder="Ej. REC-2026-001"></div>
 <div class="field"><label>Fecha de registro *</label><input id="fecha" type="date" required></div>
 <div class="field"><label>SKU / código de producto *</label><input id="sku" required list="skuOptions" placeholder="Ej. 2-5-777"><datalist id="skuOptions"></datalist></div>
 <div class="field"><label>Cliente *</label><input id="cliente" required placeholder="Nombre del cliente"></div>
@@ -196,7 +196,7 @@ async function syncFromCloud(){
   lastCloudJson=snapshot;
   setSyncStatus('Sincronizado · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
  }catch(err){
-  setSyncStatus('Error al leer Supabase: '+(err.message||String(err))+' · los datos locales se conservan.',true);
+  setSyncStatus('Error de sincronización con Supabase: '+(err.message||String(err))+' · los datos locales se conservan.',true);
  }finally{
   cloudBusy=false;
   if(cloudSavePending){cloudSavePending=false;queueCloudSave()}
@@ -222,9 +222,9 @@ const q=($('filterText')?.value||'').toLowerCase(),st=$('filterStatus')?.value||
 $('claimRows').innerHTML=db.claims.filter(c=>(!st||c.estatus===st)&&(!q||[c.sku,c.cliente,c.motivo,c.folio].join(' ').toLowerCase().includes(q))).slice().reverse().map(c=>`<tr><td><b>${esc(c.folio)}</b></td><td>${esc(c.fecha)}</td><td>${esc(c.sku)}</td><td>${esc(c.cliente)}</td><td>${esc(c.motivo)}</td><td>${esc(c.contencion)}<hr>${esc(c.indicacion)}</td><td>${esc(c.responsable)}</td><td>${esc(c.compromiso)}${c.estatus!=='Cerrada'&&c.compromiso&&c.compromiso<today()?' <span class="pill urgent">VENCIDA</span>':''}</td><td><span class="pill ${c.estatus==='Cerrada'?'closed':'open'}">${esc(c.estatus)}</span></td><td><button class="secondary" onclick="editClaim('${esc(c.folio)}')">Editar</button> <button class="danger" onclick="deleteClaim('${esc(c.folio)}')">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="10">Sin registros. Captura la primera reclamación.</td></tr>';
 $('skuRows').innerHTML=db.catalog.map((s,i)=>`<tr><td>${esc(s.sku)}</td><td>${esc(s.cliente)}</td><td>${esc(s.producto)}</td><td>${esc(s.origen||'Manual')}</td><td><button class="danger" onclick="deleteSku(${i})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="5">Catálogo vacío; agrega SKU o importa un CSV.</td></tr>';
 }
-function clearForm(){editing=null;$('claimForm').reset();$('folio').value=nextFolio();$('fecha').value=today();evidenceData='';$('evidenciaPreview').textContent='No se ha adjuntado evidencia.';$('formTitle').textContent='Nueva reclamación'}
+function clearForm(){editing=null;$('claimForm').reset();$('folio').value='';$('fecha').value=today();evidenceData='';$('evidenciaPreview').textContent='No se ha adjuntado evidencia.';$('formTitle').textContent='Nueva reclamación'}
 $('evidencia').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{evidenceData=r.result;$('evidenciaPreview').innerHTML=`<img alt="Evidencia" src="${evidenceData}" style="max-width:220px;max-height:150px;display:block;margin-top:6px">`;};r.readAsDataURL(f)});
-$('claimForm').addEventListener('submit',e=>{e.preventDefault();const obj={folio:$('folio').value,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||'',_updatedAt:new Date().toISOString()};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert(cloudUser?'Reclamación guardada. Se sincronizará con los demás dispositivos.':'Reclamación guardada localmente; inicia sesión para sincronizar.')});
+$('claimForm').addEventListener('submit',e=>{e.preventDefault();const manualFolio=$('folio').value.trim();if(!manualFolio)return alert('Captura el folio manualmente.');if(db.claims.some(c=>String(c.folio).toLowerCase()===manualFolio.toLowerCase()&&c.folio!==editing))return alert('Ese folio ya existe. Captura uno diferente.');const obj={folio:manualFolio,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||'',_updatedAt:new Date().toISOString()};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert(cloudUser?'Reclamación guardada. Se sincronizará con los demás dispositivos.':'Reclamación guardada localmente; inicia sesión para sincronizar.')});
 window.editClaim=folio=>{const c=db.claims.find(x=>x.folio===folio);if(!c)return;editing=folio;for(const k of ['folio','fecha','sku','cliente','motivo','contencion','area','responsable','compromiso','estatus','indicacion','notas'])$(k).value=c[k]||'';evidenceData=c.evidencia||'';$('evidenciaPreview').innerHTML=evidenceData?`<img src="${evidenceData}" style="max-width:220px;max-height:150px">`:'No se ha adjuntado evidencia.';$('formTitle').textContent='Editar '+folio;switchTab('registro');window.scrollTo({top:0,behavior:'smooth'})};
 window.deleteClaim=folio=>{if(confirm('¿Eliminar '+folio+'? Esta acción no se puede deshacer.')){db.claims=db.claims.filter(c=>c.folio!==folio);save()}};
 window.deleteSku=i=>{if(confirm('¿Eliminar este SKU del catálogo?')){db.catalog.splice(i,1);save()}};
@@ -304,7 +304,7 @@ try{
   setSyncStatus('Base reiniciada: 0 reclamaciones y 0 SKU. Los demás dispositivos se limpiarán al sincronizar.');
  });
  cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
- startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},15000);
+ $('syncNowBtn').addEventListener('click',()=>{if(!cloudUser)return setSyncStatus('Inicia sesión para sincronizar.',true);queueCloudSave()});startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},15000);
 }catch(err){$('cloudMessage').textContent='No se pudo inicializar la conexión: '+err.message}
 
 </script>

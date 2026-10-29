@@ -276,7 +276,7 @@ try{
  $('cloudLogin').addEventListener('submit',async e=>{e.preventDefault();$('cloudMessage').textContent='Validando acceso…';const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){$('cloudMessage').textContent='No se pudo iniciar sesión: '+error.message;return}cloudUser=data.user;$('cloudMessage').textContent='Acceso correcto.';await startCloudSession()});
  $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
  cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
- startCloudSession();window.addEventListener('focus',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>syncFromCloud(),20000);
+ startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},5000);
 }catch(err){$('cloudMessage').textContent='No se pudo inicializar la conexión: '+err.message}
 
 </script>

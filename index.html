@@ -39,7 +39,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <p id="cloudMessage" role="status" class="muted">Conexión preparada; esperando inicio de sesión.</p>
 <p class="muted">Si todavía no tienes usuario, créalo en Supabase → Authentication → Users → Add user. No compartas aquí tu contraseña.</p></section>
 <div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div><div class="actions" style="margin:0 0 12px"><button id="syncNowBtn" type="button" class="secondary">Sincronizar ahora</button></div>
-<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><button id="resetAllBtn" type="button" class="danger">Reiniciar todos los registros</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
+<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><button id="resetAllBtn" type="button" class="danger">Comenzar desde cero (limpiar reclamaciones)</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
 <main><div class="stats">
  <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
  <div class="stat"><b id="openCount">0</b><span>Casos abiertos</span></div>
@@ -165,7 +165,7 @@ async function queueCloudSave(){
   const knownReset=localStorage.getItem('bitacora_reset_token')||'';
   if(remote._resetToken&&remote._resetToken!==knownReset){
    localStorage.setItem('bitacora_reset_token',remote._resetToken);
-   db={claims:[],catalog:[],_resetToken:remote._resetToken};
+   db={claims:[],catalog:Array.isArray(remote.catalog)?remote.catalog:[],_resetToken:remote._resetToken};
   }else db=mergeData(remote,localSnapshot);
   localStorage.setItem(KEY,JSON.stringify(db));render();
   let wanted=syncFingerprint(db);
@@ -204,7 +204,7 @@ async function syncFromCloud(){
   const knownReset=localStorage.getItem('bitacora_reset_token')||'';
   if(remote._resetToken&&remote._resetToken!==knownReset){
    localStorage.setItem('bitacora_reset_token',remote._resetToken);
-   db={claims:[],catalog:[],_resetToken:remote._resetToken};
+   db={claims:[],catalog:Array.isArray(remote.catalog)?remote.catalog:[],_resetToken:remote._resetToken};
   }else db=mergeData(remote,local);
   localStorage.setItem(KEY,JSON.stringify(db));render();
   const wanted=syncFingerprint(db);
@@ -333,15 +333,19 @@ try{
  $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
  $('resetAllBtn').addEventListener('click',async()=>{
   if(!cloudUser||!cloudClient)return alert('Inicia sesión antes de reiniciar.');
-  if(!confirm('ATENCIÓN: se eliminarán TODAS las reclamaciones y todos los SKU del catálogo en la nube y en los dispositivos conectados. Esta acción no se puede deshacer. ¿Continuar?'))return;
+  if(!confirm('Se eliminarán todas las reclamaciones y seguimientos en la nube y en los dispositivos. Se conservará el catálogo maestro de SKU. Esta acción no se puede deshacer. ¿Comenzar desde cero?'))return;
   const token='reset-'+Date.now()+'-'+cloudUser.id;
-  setSyncStatus('Reiniciando base de datos en todos los dispositivos…');
-  const empty={claims:[],catalog:[],_resetToken:token};
-  const {error}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:empty,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id');
+  setSyncStatus('Limpiando reclamaciones y conservando el catálogo maestro…');
+  const empty={claims:[],catalog:Array.isArray(db.catalog)?db.catalog:[],_resetToken:token};
+  const {error}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:empty,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').single();
   if(error){setSyncStatus('No se pudo reiniciar: '+error.message,true);return}
+  const {data:verify,error:verifyError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).single();
+  if(verifyError){setSyncStatus('No se pudo verificar el reinicio: '+verifyError.message,true);return}
+  if((verify?.payload?.claims||[]).length!==0){setSyncStatus('El reinicio no fue confirmado por la nube. Los datos locales se conservan.',true);return}
   localStorage.setItem('bitacora_reset_token',token);
-  db=empty;localStorage.setItem(KEY,JSON.stringify(db));editing=null;evidenceData='';lastCloudJson=JSON.stringify(db);render();clearForm();
-  setSyncStatus('Base reiniciada: 0 reclamaciones y 0 SKU. Los demás dispositivos se limpiarán al sincronizar.');
+  db={claims:[],catalog:verify.payload.catalog||[],_resetToken:token};
+  localStorage.setItem(KEY,JSON.stringify(db));editing=null;evidenceData='';lastCloudJson=syncFingerprint(db);render();clearForm();
+  setSyncStatus('Nueva bitácora lista: 0 reclamaciones. Catálogo maestro conservado y reinicio confirmado en la nube. Los demás dispositivos se actualizarán al sincronizar.');
  });
  cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
  $('syncNowBtn').addEventListener('click',()=>{if(!cloudUser)return setSyncStatus('Inicia sesión para sincronizar.',true);queueCloudSave()});startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},15000);

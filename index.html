@@ -39,7 +39,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <p id="cloudMessage" role="status" class="muted">Conexión preparada; esperando inicio de sesión.</p>
 <p class="muted">Si todavía no tienes usuario, créalo en Supabase → Authentication → Users → Add user. No compartas aquí tu contraseña.</p></section>
 <div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div><div class="actions" style="margin:0 0 12px"><button id="syncNowBtn" type="button" class="secondary">Sincronizar ahora</button></div>
-<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><button id="resetAllBtn" type="button" class="danger">Comenzar desde cero (limpiar reclamaciones)</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
+<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><span id="cloudUser class="muted" style="align-self:center"></span></div>
 <main><div class="stats">
  <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
  <div class="stat"><b id="openCount">0</b><span>Casos abiertos</span></div>
@@ -50,7 +50,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <button class="tab active" data-tab="registro">Registrar reclamación</button>
 <button class="tab secondary" data-tab="analisis">Analizar producción</button>
 <button class="tab secondary" data-tab="historial">Base de datos / historial</button>
-<button class="tab secondary" data-tab="catalogo">Catálogo maestro de SKU</button>
+
 </div>
 <section id="registro" class="panel active">
 <div class="card"><h2 id="formTitle">Nueva reclamación</h2>
@@ -90,20 +90,14 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <div class="grid">
 <div class="field"><label>Buscar por SKU, cliente o motivo</label><input id="filterText" placeholder="Buscar..."></div>
 <div class="field"><label>Estatus</label><select id="filterStatus"><option value="">Todos</option><option>Abierta</option><option>En seguimiento</option><option>Cerrada</option></select></div>
-<div class="field"><label>Importar catálogo CSV</label><input id="csvImport" type="file" accept=".csv,text/csv"></div>
+
 <div class="field"><label>Restaurar respaldo JSON</label><input id="jsonImport" type="file" accept=".json,application/json"></div>
 </div>
-<div class="actions"><button id="exportCsv">Exportar reclamaciones CSV</button><button id="exportJson" class="secondary">Respaldar todo (JSON)</button><button id="exportSku" class="secondary">Exportar catálogo SKU CSV</button></div>
+<div class="actions"><button id="exportCsv">Exportar reclamaciones CSV</button><button id="exportJson" class="secondary">Respaldar todo (JSON)</button></div>
 <div class="tablewrap" style="margin-top:15px"><table><thead><tr><th>Folio</th><th>Fecha</th><th>SKU</th><th>Cliente</th><th>Motivo</th><th>Acción / indicación</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th>Acciones</th></tr></thead><tbody id="claimRows"></tbody></table></div>
 </div>
 </section>
-<section id="catalogo" class="panel">
-<div class="card"><h2>Catálogo maestro de SKU</h2><p>Importa un CSV con columnas <b>sku, cliente, producto</b> (cliente y producto son opcionales). También puedes agregar SKU manualmente.</p>
-<div class="grid"><div class="field"><label>SKU</label><input id="newSku" placeholder="Código SKU"></div><div class="field"><label>Cliente</label><input id="newClient" placeholder="Cliente"></div><div class="field wide"><label>Descripción / producto</label><input id="newProduct" placeholder="Nombre del producto"></div></div>
-<div class="actions"><button id="addSku">Agregar SKU</button></div>
-<div class="tablewrap" style="margin-top:15px"><table><thead><tr><th>SKU</th><th>Cliente</th><th>Producto</th><th>Origen</th><th></th></tr></thead><tbody id="skuRows"></tbody></table></div>
-</div>
-</section>
+
 </main>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -154,9 +148,8 @@ function mergeData(a,b){
   // One record per folio: never create a new duplicate just because copies differ.
   if(newTime>=oldTime)byFolio.set(c.folio,{...c});
  }
- const catalog=new Map();
- for(const s of [...(a.catalog||[]),...(b.catalog||[])])if(s&&s.sku){const k=normalizeSku(s.sku);if(!catalog.has(k))catalog.set(k,s)}
- return {claims:[...byFolio.values()],catalog:[...catalog.values()],_resetToken:a._resetToken||b._resetToken||''};
+ // El catálogo maestro se retiró; los SKU históricos se consultan desde las reclamaciones.
+ return {claims:[...byFolio.values()],catalog:[],_resetToken:a._resetToken||b._resetToken||''};
 }
 async function queueCloudSave(){
  if(!cloudClient||!cloudUser)return;
@@ -252,7 +245,7 @@ async function syncFromCloud(){
 }
 async function startCloudSession(){
  const {data:{session},error}=await cloudClient.auth.getSession();if(error){$('cloudMessage').textContent='Error de autenticación: '+error.message;return}
- if(session){cloudUser=session.user;$('cloudGate').classList.add('hidden');$('appShell').classList.remove('hidden');$('cloudUser').textContent=session.user.email||'';await syncFromCloud()}
+ if(session){cloudUser=session.user;$('cloudGate').classList.add('hidden');$('appShell').classList.remove('hidden');$('cloudUser').textContent=session.user.email||'';await syncFromCloud();await queueCloudSave()}
  else{$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}
 }
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -268,26 +261,26 @@ $('skuCount').textContent=unique(db.claims.map(c=>normalizeSku(c.sku))).length;
 $('skuOptions').innerHTML=allSkus().map(s=>`<option value="${esc(s)}">`).join('');
 const q=($('filterText')?.value||'').toLowerCase(),st=$('filterStatus')?.value||'';
 $('claimRows').innerHTML=db.claims.filter(c=>(!st||c.estatus===st)&&(!q||[c.sku,c.cliente,c.motivo,c.folio].join(' ').toLowerCase().includes(q))).slice().reverse().map(c=>`<tr><td><b>${esc(c.folio)}</b></td><td>${esc(c.fecha)}</td><td>${esc(c.sku)}</td><td>${esc(c.cliente)}</td><td>${esc(c.motivo)}</td><td>${esc(c.contencion)}<hr>${esc(c.indicacion)}</td><td>${esc(c.responsable)}</td><td>${esc(c.compromiso)}${c.estatus!=='Cerrada'&&c.compromiso&&c.compromiso<today()?' <span class="pill urgent">VENCIDA</span>':''}</td><td><span class="pill ${c.estatus==='Cerrada'?'closed':'open'}">${esc(c.estatus)}</span></td><td><button class="secondary" onclick="editClaim('${esc(c.folio)}')">Editar</button> <button class="danger" onclick="deleteClaim('${esc(c.folio)}')">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="10">Sin registros. Captura la primera reclamación.</td></tr>';
-$('skuRows').innerHTML=db.catalog.map((s,i)=>`<tr><td>${esc(s.sku)}</td><td>${esc(s.cliente)}</td><td>${esc(s.producto)}</td><td>${esc(s.origen||'Manual')}</td><td><button class="danger" onclick="deleteSku(${i})">Eliminar</button></td></tr>`).join('')||'<tr><td colspan="5">Catálogo vacío; agrega SKU o importa un CSV.</td></tr>';
+
 }
 function clearForm(){editing=null;$('claimForm').reset();$('folio').value='';$('fecha').value=today();evidenceData='';$('evidenciaPreview').textContent='No se ha adjuntado evidencia.';$('formTitle').textContent='Nueva reclamación'}
 $('evidencia').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{evidenceData=r.result;$('evidenciaPreview').innerHTML=`<img alt="Evidencia" src="${evidenceData}" style="max-width:220px;max-height:150px;display:block;margin-top:6px">`;};r.readAsDataURL(f)});
-$('claimForm').addEventListener('submit',e=>{e.preventDefault();const manualFolio=$('folio').value.trim();if(!manualFolio)return alert('Captura el folio manualmente.');if(db.claims.some(c=>String(c.folio).toLowerCase()===manualFolio.toLowerCase()&&c.folio!==editing))return alert('Ese folio ya existe. Captura uno diferente.');const obj={folio:manualFolio,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||'',_updatedAt:new Date().toISOString()};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert(cloudUser?'Reclamación guardada. Se sincronizará con los demás dispositivos.':'Reclamación guardada localmente; inicia sesión para sincronizar.')});
+$('claimForm').addEventListener('submit',e=>{e.preventDefault();const manualFolio=$('folio').value.trim();if(!manualFolio)return alert('Captura el folio manualmente.');if(db.claims.some(c=>String(c.folio).toLowerCase()===manualFolio.toLowerCase()&&c.folio!==editing))return alert('Ese folio ya existe. Captura uno diferente.');const obj={folio:manualFolio,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||'',_updatedAt:new Date().toISOString()};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);save();clearForm();alert(cloudUser?'Reclamación guardada. Se sincronizará con los demás dispositivos.':'Reclamación guardada localmente; inicia sesión para sincronizar.')});
 window.editClaim=folio=>{const c=db.claims.find(x=>x.folio===folio);if(!c)return;editing=folio;for(const k of ['folio','fecha','sku','cliente','motivo','contencion','area','responsable','compromiso','estatus','indicacion','notas'])$(k).value=c[k]||'';evidenceData=c.evidencia||'';$('evidenciaPreview').innerHTML=evidenceData?`<img src="${evidenceData}" style="max-width:220px;max-height:150px">`:'No se ha adjuntado evidencia.';$('formTitle').textContent='Editar '+folio;switchTab('registro');window.scrollTo({top:0,behavior:'smooth'})};
 window.deleteClaim=folio=>{if(confirm('¿Eliminar '+folio+'? Esta acción no se puede deshacer.')){db.claims=db.claims.filter(c=>c.folio!==folio);save()}};
-window.deleteSku=i=>{if(confirm('¿Eliminar este SKU del catálogo?')){db.catalog.splice(i,1);save()}};
+
 $('newBtn').onclick=clearForm;
 function switchTab(id){document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===id));document.querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.dataset.tab===id);b.classList.toggle('secondary',b.dataset.tab!==id)})}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 $('filterText').addEventListener('input',render);$('filterStatus').addEventListener('change',render);
-$('addSku').onclick=()=>{let sku=$('newSku').value.trim();if(!sku)return alert('Captura el SKU.');if(db.catalog.some(x=>normalizeSku(x.sku)===normalizeSku(sku)))return alert('Ese SKU ya existe en el catálogo.');db.catalog.push({sku,cliente:$('newClient').value.trim(),producto:$('newProduct').value.trim(),origen:'Manual'});$('newSku').value='';$('newClient').value='';$('newProduct').value='';save()};
+
 function download(name,content,type='text/plain'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();URL.revokeObjectURL(a.href)}
 function csv(rows){const keys=rows.length?Object.keys(rows[0]):[];const val=v=>'"'+String(v??'').replace(/"/g,'""')+'"';return [keys.map(val).join(','),...rows.map(r=>keys.map(k=>val(k==='evidencia'?'[imagen adjunta en respaldo JSON]':r[k])).join(','))].join('\r\n')}
 $('exportCsv').onclick=()=>download('reclamaciones.csv','\ufeff'+csv(db.claims),'text/csv;charset=utf-8');
-$('exportSku').onclick=()=>download('catalogo_sku.csv','\ufeff'+csv(db.catalog),'text/csv;charset=utf-8');
+
 $('exportJson').onclick=()=>download('respaldo_bitacora.json',JSON.stringify(db,null,2),'application/json');
 function parseCSV(text){let rows=[],row=[],v='',q=false;for(let i=0;i<text.length;i++){let c=text[i];if(c==='"'&&q&&text[i+1]==='"'){v+='"';i++}else if(c==='"')q=!q;else if(c===','&&!q){row.push(v);v=''}else if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&text[i+1]==='\n')i++;row.push(v);if(row.some(x=>x.trim()))rows.push(row);row=[];v=''}else v+=c}row.push(v);if(row.some(x=>x.trim()))rows.push(row);return rows}
-$('csvImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;const rows=parseCSV((await f.text()).replace(/^\ufeff/,''));if(rows.length<2)return alert('El CSV no contiene filas de datos.');const headers=rows.shift().map(x=>x.trim().toLowerCase());const ix=key=>headers.indexOf(key);const si=ix('sku');if(si<0)return alert('El CSV debe tener una columna llamada sku.');let n=0;rows.forEach(r=>{const sku=(r[si]||'').trim();if(sku&&!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(sku))){db.catalog.push({sku,cliente:r[ix('cliente')]||'',producto:r[ix('producto')]||'',origen:'Importado CSV'});n++}});save();alert('SKU agregados: '+n);e.target.value=''};
+
 $('jsonImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const incoming=JSON.parse(await f.text());if(!Array.isArray(incoming.claims)||!Array.isArray(incoming.catalog))throw 0;if(confirm('¿Reemplazar los datos actuales con el respaldo?')){db=incoming;save();clearForm();alert('Respaldo restaurado.')}}catch(err){alert('No se pudo leer el respaldo JSON.')}e.target.value=''};
 function levenshtein(a,b){const dp=Array.from({length:b.length+1},(_,i)=>[i]);for(let j=1;j<=a.length;j++)dp[0][j]=j;for(let i=1;i<=b.length;i++)for(let j=1;j<=a.length;j++)dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(b[i-1]===a[j-1]?0:1));return dp[b.length][a.length]}
 function matchSkus(tokens,ocrText=''){
@@ -339,22 +332,7 @@ try{
  cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{global:{fetch:(input,init={})=>fetch(input,{...init,cache:'no-store'})}});
  $('cloudLogin').addEventListener('submit',async e=>{e.preventDefault();$('cloudMessage').textContent='Validando acceso…';const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){$('cloudMessage').textContent='No se pudo iniciar sesión: '+error.message;return}cloudUser=data.user;$('cloudMessage').textContent='Acceso correcto.';await startCloudSession()});
  $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
- $('resetAllBtn').addEventListener('click',async()=>{
-  if(!cloudUser||!cloudClient)return alert('Inicia sesión antes de reiniciar.');
-  if(!confirm('Se eliminarán todas las reclamaciones y seguimientos en la nube y en los dispositivos. Se conservará el catálogo maestro de SKU. Esta acción no se puede deshacer. ¿Comenzar desde cero?'))return;
-  const token='reset-'+Date.now()+'-'+cloudUser.id;
-  setSyncStatus('Limpiando reclamaciones y conservando el catálogo maestro…');
-  const empty={claims:[],catalog:Array.isArray(db.catalog)?db.catalog:[],_resetToken:token};
-  const {error}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:empty,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').single();
-  if(error){setSyncStatus('No se pudo reiniciar: '+error.message,true);return}
-  const {data:verify,error:verifyError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).single();
-  if(verifyError){setSyncStatus('No se pudo verificar el reinicio: '+verifyError.message,true);return}
-  if((verify?.payload?.claims||[]).length!==0){setSyncStatus('El reinicio no fue confirmado por la nube. Los datos locales se conservan.',true);return}
-  localStorage.setItem('bitacora_reset_token',token);
-  db={claims:[],catalog:verify.payload.catalog||[],_resetToken:token};
-  localStorage.setItem(KEY,JSON.stringify(db));editing=null;evidenceData='';lastCloudJson=syncFingerprint(db);render();clearForm();
-  setSyncStatus('Nueva bitácora lista: 0 reclamaciones. Catálogo maestro conservado y reinicio confirmado en la nube. Los demás dispositivos se actualizarán al sincronizar.');
- });
+;
  cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
  $('syncNowBtn').addEventListener('click',()=>{if(!cloudUser)return setSyncStatus('Inicia sesión para sincronizar.',true);queueCloudSave()});startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},15000);
 }catch(err){$('cloudMessage').textContent='No se pudo inicializar la conexión: '+err.message}

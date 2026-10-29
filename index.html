@@ -125,10 +125,27 @@ function stableJson(value){
  return JSON.stringify(value);
 }
 function syncFingerprint(value){
- // JSON round-trip mirrors exactly what Postgres JSONB can store (no undefined values).
- const src=JSON.parse(JSON.stringify({claims:Array.isArray(value?.claims)?value.claims:[],catalog:Array.isArray(value?.catalog)?value.catalog:[],_resetToken:value?._resetToken||''}));
- src.claims.sort((a,b)=>String(a.folio||'').localeCompare(String(b.folio||'')));
- src.catalog.sort((a,b)=>normalizeSku(a.sku).localeCompare(normalizeSku(b.sku)));
+ // Compara contenido funcional, no el orden ni duplicados históricos de la tabla.
+ const claimsById=new Map();
+ for(const item of (value?.claims||[])){
+  if(!item||!item.folio)continue;
+  const k=String(item.folio).trim().toUpperCase();
+  const prev=claimsById.get(k);
+  const pt=Date.parse(prev?._updatedAt||prev?.updated_at||'')||0;
+  const nt=Date.parse(item._updatedAt||item.updated_at||'')||0;
+  if(!prev||nt>=pt)claimsById.set(k,item);
+ }
+ const skuById=new Map();
+ for(const item of (value?.catalog||[])){
+  if(!item||!item.sku)continue;
+  const k=normalizeSku(item.sku);
+  if(k&&!skuById.has(k))skuById.set(k,item);
+ }
+ const src=JSON.parse(JSON.stringify({
+  claims:[...claimsById.values()].sort((a,b)=>String(a.folio).localeCompare(String(b.folio))),
+  catalog:[...skuById.values()].sort((a,b)=>normalizeSku(a.sku).localeCompare(normalizeSku(b.sku))),
+  _resetToken:value?._resetToken||''
+ }));
  return stableJson(src);
 }
 function mergeData(a,b){
@@ -219,9 +236,11 @@ async function syncFromCloud(){
    if(syncFingerprint(confirmed)===wanted)break;
    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
   }
-  if(syncFingerprint(confirmed)!==wanted){
-   const sentClaims=(db.claims||[]).length,readClaims=(confirmed.claims||[]).length;
-   throw new Error('La nube conserva '+readClaims+' reclamaciones y el dispositivo envió '+sentClaims+'. Revisa permisos o conexión; no se sustituyeron tus datos locales.');
+  const confirmedFingerprint=syncFingerprint(confirmed);
+  if(confirmedFingerprint!==wanted){
+   const cloudFolios=new Set((confirmed.claims||[]).map(x=>String(x.folio||'').trim().toUpperCase()));
+   const missing=(db.claims||[]).filter(x=>!cloudFolios.has(String(x.folio||'').trim().toUpperCase())).map(x=>x.folio);
+   throw new Error(missing.length?'La nube aún no contiene estos folios: '+missing.slice(0,5).join(', '):'La nube tiene cambios distintos para uno o más folios. Se conservaron los datos locales.');
   }
   // La copia confirmada de la nube pasa a ser la base local compartida.
   db={claims:confirmed.claims||[],catalog:confirmed.catalog||[],_resetToken:confirmed._resetToken||''};

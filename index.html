@@ -39,7 +39,7 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <p id="cloudMessage" role="status" class="muted">Conexión preparada; esperando inicio de sesión.</p>
 <p class="muted">Si todavía no tienes usuario, créalo en Supabase → Authentication → Users → Add user. No compartas aquí tu contraseña.</p></section>
 <div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div>
-<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
+<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><button id="resetAllBtn" type="button" class="danger">Reiniciar todos los registros</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
 <main><div class="stats">
  <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
  <div class="stat"><b id="openCount">0</b><span>Casos abiertos</span></div>
@@ -132,7 +132,7 @@ function mergeData(a,b){
  }
  const catalog=new Map();
  for(const s of [...(a.catalog||[]),...(b.catalog||[])])if(s&&s.sku){const k=normalizeSku(s.sku);if(!catalog.has(k))catalog.set(k,s)}
- return {claims:[...byFolio.values()],catalog:[...catalog.values()]};
+ return {claims:[...byFolio.values()],catalog:[...catalog.values()],_resetToken:a._resetToken||b._resetToken||''};
 }
 async function queueCloudSave(){
  if(!cloudClient||!cloudUser)return;
@@ -144,8 +144,11 @@ async function queueCloudSave(){
   const {data:remoteRow,error:readError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).maybeSingle();
   if(readError)throw readError;
   const remotePayload=remoteRow&&remoteRow.payload?remoteRow.payload:{claims:[],catalog:[]};
-  const merged=mergeData(remotePayload,localSnapshot);
-  db=merged;
+  const knownReset=localStorage.getItem('bitacora_reset_token')||'';
+  if(remotePayload._resetToken&&remotePayload._resetToken!==knownReset){
+   localStorage.setItem('bitacora_reset_token',remotePayload._resetToken);
+   db={claims:[],catalog:[],_resetToken:remotePayload._resetToken};
+  }else db=mergeData(remotePayload,localSnapshot);
   localStorage.setItem(KEY,JSON.stringify(db));
   render();
   const snapshot=JSON.stringify(db);
@@ -172,7 +175,11 @@ async function syncFromCloud(){
   if(error)throw error;
   const local=JSON.parse(localStorage.getItem(KEY)||'{"claims":[],"catalog":[]}');
   const remote=data&&data.payload?data.payload:{claims:[],catalog:[]};
-  db=mergeData(remote,local);
+  const knownReset=localStorage.getItem('bitacora_reset_token')||'';
+  if(remote._resetToken&&remote._resetToken!==knownReset){
+   localStorage.setItem('bitacora_reset_token',remote._resetToken);
+   db={claims:[],catalog:[],_resetToken:remote._resetToken};
+  }else db=mergeData(remote,local);
   localStorage.setItem(KEY,JSON.stringify(db));
   render();
   const snapshot=JSON.stringify(db);
@@ -279,6 +286,18 @@ try{
  cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
  $('cloudLogin').addEventListener('submit',async e=>{e.preventDefault();$('cloudMessage').textContent='Validando acceso…';const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){$('cloudMessage').textContent='No se pudo iniciar sesión: '+error.message;return}cloudUser=data.user;$('cloudMessage').textContent='Acceso correcto.';await startCloudSession()});
  $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
+ $('resetAllBtn').addEventListener('click',async()=>{
+  if(!cloudUser||!cloudClient)return alert('Inicia sesión antes de reiniciar.');
+  if(!confirm('ATENCIÓN: se eliminarán TODAS las reclamaciones y todos los SKU del catálogo en la nube y en los dispositivos conectados. Esta acción no se puede deshacer. ¿Continuar?'))return;
+  const token='reset-'+Date.now()+'-'+cloudUser.id;
+  setSyncStatus('Reiniciando base de datos en todos los dispositivos…');
+  const empty={claims:[],catalog:[],_resetToken:token};
+  const {error}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:empty,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id');
+  if(error){setSyncStatus('No se pudo reiniciar: '+error.message,true);return}
+  localStorage.setItem('bitacora_reset_token',token);
+  db=empty;localStorage.setItem(KEY,JSON.stringify(db));editing=null;evidenceData='';lastCloudJson=JSON.stringify(db);render();clearForm();
+  setSyncStatus('Base reiniciada: 0 reclamaciones y 0 SKU. Los demás dispositivos se limpiarán al sincronizar.');
+ });
  cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
  startCloudSession();window.addEventListener('focus',()=>syncFromCloud());window.addEventListener('online',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>{if(!document.hidden)syncFromCloud()},15000);
 }catch(err){$('cloudMessage').textContent='No se pudo inicializar la conexión: '+err.message}

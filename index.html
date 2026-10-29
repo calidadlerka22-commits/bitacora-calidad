@@ -25,12 +25,22 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 <meta name="theme-color" content="#17365d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="Bitácora de reclamaciones sincronizada entre dispositivos">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
 </head>
 <body>
 <header><h1>Bitácora Inteligente de Reclamaciones y Rechazos</h1><p>Registro de antecedentes · análisis del programa de producción · prevención de recurrencias</p></header>
-<main>
-<div class="stats">
+<section id="cloudGate" style="max-width:520px;margin:24px auto;padding:20px;background:#fff;border:1px solid #d7e0eb;border-radius:12px;box-shadow:0 2px 8px #20344d0a">
+<h2>Acceso seguro a la bitácora</h2><p>Inicia sesión con el usuario autorizado de Supabase para sincronizar reclamaciones y catálogo entre PC y celular.</p>
+<form id="cloudLogin" class="grid" style="grid-template-columns:1fr">
+<div class="field"><label for="cloudEmail">Correo autorizado</label><input id="cloudEmail" type="email" autocomplete="username" required></div>
+<div class="field"><label for="cloudPassword">Contraseña</label><input id="cloudPassword" type="password" autocomplete="current-password" required></div>
+<div class="actions"><button type="submit">Iniciar sesión y sincronizar</button></div></form>
+<p id="cloudMessage" role="status" class="muted">Conexión preparada; esperando inicio de sesión.</p>
+<p class="muted">Si todavía no tienes usuario, créalo en Supabase → Authentication → Users → Add user. No compartas aquí tu contraseña.</p></section>
+<div id="appShell" class="hidden"><div id="syncBar" class="alert">Conectando con la base de datos en la nube…</div>
+<div class="actions" style="margin:0 0 14px"><button id="cloudLogout" type="button" class="secondary">Cerrar sesión</button><span id="cloudUser" class="muted" style="align-self:center"></span></div>
+<main><div class="stats">
  <div class="stat"><b id="total">0</b><span>Reclamaciones registradas</span></div>
  <div class="stat"><b id="openCount">0</b><span>Casos abiertos</span></div>
  <div class="stat"><b id="overdueCount">0</b><span>Acciones vencidas</span></div>
@@ -95,13 +105,55 @@ label{font-weight:600;font-size:12px;color:#475569}input,select,textarea{width:1
 </div>
 </section>
 </main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const KEY='bitacora_reclamaciones_v1';
-let db={claims:[],catalog:[]}, editing=null, evidenceData='';
+const SUPABASE_URL='https://krjaizdtouojynrskane.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_pOdFVn4RMGAawr7nOxOl5A_3Y1GRA5q';
+const CLOUD_TABLE='bitacora_state';
+let db={claims:[],catalog:[]}, editing=null, evidenceData='', cloudClient=null, cloudUser=null, cloudBusy=false, lastCloudJson='';
 function load(){try{db=JSON.parse(localStorage.getItem(KEY))||db}catch(e){} if(!db.claims)db.claims=[];if(!db.catalog)db.catalog=[]}
-function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+function setSyncStatus(message,isError=false){const el=$('syncBar');if(el){el.textContent=message;el.classList.toggle('red',!!isError)}}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));render();if(cloudUser)queueCloudSave()}
+function mergeData(a,b){
+ const claims=[],byFolio=new Map();
+ [...(a.claims||[]),...(b.claims||[])].forEach(c=>{
+  if(!c||!c.folio)return;
+  if(!byFolio.has(c.folio)){const copy={...c};byFolio.set(copy.folio,copy);claims.push(copy);return}
+  const existing=byFolio.get(c.folio);if(JSON.stringify(existing)===JSON.stringify(c))return;
+  let n=2,newFolio=c.folio+'-SYNC-'+n;while(byFolio.has(newFolio)){n++;newFolio=c.folio+'-SYNC-'+n}
+  const copy={...c,folio:newFolio};byFolio.set(newFolio,copy);claims.push(copy);
+ });
+ const catalog=new Map();[...(a.catalog||[]),...(b.catalog||[])].forEach(s=>{if(s&&s.sku){const k=normalizeSku(s.sku);if(!catalog.has(k))catalog.set(k,s)}});
+ return {claims,catalog:[...catalog.values()]};
+}
+function queueCloudSave(){
+ if(!cloudClient||!cloudUser||cloudBusy)return;
+ const snapshot=JSON.stringify(db);if(snapshot===lastCloudJson)return;
+ cloudBusy=true;setSyncStatus('Guardando cambios en la nube…');
+ cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:db,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').then(({error})=>{
+  cloudBusy=false;if(error){setSyncStatus('Error al sincronizar: '+error.message+'. Los cambios siguen guardados localmente; revisa la configuración SQL.',true);return}
+  lastCloudJson=JSON.stringify(db);setSyncStatus('Sincronizado con Supabase · '+new Date().toLocaleTimeString());if(JSON.stringify(db)!==lastCloudJson)queueCloudSave();
+ }).catch(err=>{cloudBusy=false;setSyncStatus('No se pudo sincronizar. Los cambios siguen en este dispositivo: '+err.message,true)});
+}
+async function syncFromCloud(){
+ if(!cloudClient||!cloudUser||cloudBusy)return;
+ const {data,error}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).maybeSingle();
+ if(error){setSyncStatus('No se pudo leer la nube: '+error.message+'. Revisa que hayas ejecutado supabase-setup.sql.',true);return}
+ const local=JSON.parse(localStorage.getItem(KEY)||'{"claims":[],"catalog":[]}');
+ if(data&&data.payload){
+  db=mergeData(data.payload,local);localStorage.setItem(KEY,JSON.stringify(db));render();lastCloudJson=JSON.stringify(data.payload);
+  if(JSON.stringify(db)!==lastCloudJson)queueCloudSave();else setSyncStatus('Conectado y sincronizado · '+new Date().toLocaleTimeString());
+ }else{db=mergeData({claims:[],catalog:[]},local);localStorage.setItem(KEY,JSON.stringify(db));queueCloudSave();setSyncStatus('No hay datos en la nube todavía. Subiendo los registros locales…')}
+}
+async function startCloudSession(){
+ const {data:{session},error}=await cloudClient.auth.getSession();if(error){$('cloudMessage').textContent='Error de autenticación: '+error.message;return}
+ if(session){cloudUser=session.user;$('cloudGate').classList.add('hidden');$('appShell').classList.remove('hidden');$('cloudUser').textContent=session.user.email||'';await syncFromCloud()}
+ else{$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}
+}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function today(){return new Date().toISOString().slice(0,10)}
 function nextFolio(){let max=db.claims.reduce((m,c)=>Math.max(m,Number((c.folio||'').replace(/\D/g,''))||0),0);return 'REC-'+String(max+1).padStart(5,'0')}
@@ -119,7 +171,7 @@ $('skuRows').innerHTML=db.catalog.map((s,i)=>`<tr><td>${esc(s.sku)}</td><td>${es
 }
 function clearForm(){editing=null;$('claimForm').reset();$('folio').value=nextFolio();$('fecha').value=today();evidenceData='';$('evidenciaPreview').textContent='No se ha adjuntado evidencia.';$('formTitle').textContent='Nueva reclamación'}
 $('evidencia').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{evidenceData=r.result;$('evidenciaPreview').innerHTML=`<img alt="Evidencia" src="${evidenceData}" style="max-width:220px;max-height:150px;display:block;margin-top:6px">`;};r.readAsDataURL(f)});
-$('claimForm').addEventListener('submit',e=>{e.preventDefault();const obj={folio:$('folio').value,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||''};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert('Reclamación guardada en la base local del navegador.')});
+$('claimForm').addEventListener('submit',e=>{e.preventDefault();const obj={folio:$('folio').value,fecha:$('fecha').value,sku:$('sku').value.trim(),cliente:$('cliente').value.trim(),motivo:$('motivo').value.trim(),contencion:$('contencion').value.trim(),area:$('area').value,responsable:$('responsable').value.trim(),compromiso:$('compromiso').value,estatus:$('estatus').value,indicacion:$('indicacion').value.trim(),notas:$('notas').value.trim(),evidencia:evidenceData||(editing?db.claims.find(c=>c.folio===editing)?.evidencia:'')||''};if(editing){const i=db.claims.findIndex(c=>c.folio===editing);if(i>=0)db.claims[i]=obj}else db.claims.push(obj);if(!db.catalog.some(s=>normalizeSku(s.sku)===normalizeSku(obj.sku)))db.catalog.push({sku:obj.sku,cliente:obj.cliente,producto:'',origen:'Capturado en reclamación'});save();clearForm();alert(cloudUser?'Reclamación guardada. Se sincronizará con los demás dispositivos.':'Reclamación guardada localmente; inicia sesión para sincronizar.')});
 window.editClaim=folio=>{const c=db.claims.find(x=>x.folio===folio);if(!c)return;editing=folio;for(const k of ['folio','fecha','sku','cliente','motivo','contencion','area','responsable','compromiso','estatus','indicacion','notas'])$(k).value=c[k]||'';evidenceData=c.evidencia||'';$('evidenciaPreview').innerHTML=evidenceData?`<img src="${evidenceData}" style="max-width:220px;max-height:150px">`:'No se ha adjuntado evidencia.';$('formTitle').textContent='Editar '+folio;switchTab('registro');window.scrollTo({top:0,behavior:'smooth'})};
 window.deleteClaim=folio=>{if(confirm('¿Eliminar '+folio+'? Esta acción no se puede deshacer.')){db.claims=db.claims.filter(c=>c.folio!==folio);save()}};
 window.deleteSku=i=>{if(confirm('¿Eliminar este SKU del catálogo?')){db.catalog.splice(i,1);save()}};
@@ -181,6 +233,15 @@ $('searchManual').onclick=()=>{const tokens=$('manualSkus').value.split(/[\s,;|]
 $('programImage').addEventListener('change',()=>{const files=[...$('programImage').files];$('selectedImageCount').textContent=`${files.length} de 4 imágenes seleccionadas`;if(files.length>4){$('ocrStatus').textContent='Seleccionaste más de 4 imágenes. Solo se analizarán las primeras 4.';}$('productionPreview').innerHTML=files.slice(0,4).map((f,i)=>`<div style="border:1px solid #cbd5e1;border-radius:8px;padding:8px;background:#fff"><div style="font-weight:600;font-size:12px;margin-bottom:6px">Imagen ${i+1}: ${esc(f.name)}</div><img alt="Vista previa ${i+1}" src="${URL.createObjectURL(f)}" style="width:100%;max-height:220px;object-fit:contain"></div>`).join('')});
 $('analyzeBtn').onclick=async()=>{const files=[...$('programImage').files].slice(0,4);if(!files.length)return alert('Adjunta al menos una imagen del programa.');if($('programImage').files.length>4)alert('Se seleccionaron más de 4 imágenes; se analizarán únicamente las primeras 4.');$('ocrStatus').textContent=`Preparando ${files.length} imagen(es) y buscando la columna de SKU…`;$('matches').innerHTML='';$('ocrCandidatesBox').classList.remove('hidden');try{if(!window.Tesseract)throw Error('No se pudo cargar el motor OCR. Comprueba tu conexión a internet.');let texts=[];for(let i=0;i<files.length;i++){const f=files[i];$('ocrStatus').textContent=`Imagen ${i+1} de ${files.length}: leyendo imagen ampliada…`;const opts={logger:m=>{if(m.status)$('ocrStatus').textContent=`Imagen ${i+1}/${files.length}: `+m.status+(m.progress!=null?' '+Math.round(m.progress*100)+'%':'')}};const full=await makeOcrCanvas(f,false);const r1=await Tesseract.recognize(full,'eng',opts);texts.push(`--- IMAGEN ${i+1}: ${f.name} / LECTURA COMPLETA ---\n${r1.data.text||''}`);$('ocrStatus').textContent=`Imagen ${i+1} de ${files.length}: revisando zona izquierda de la tabla…`;const left=await makeOcrCanvas(f,true);const r2=await Tesseract.recognize(left,'eng',opts);texts.push(`--- IMAGEN ${i+1}: ${f.name} / SEGUNDA LECTURA ZONA IZQUIERDA ---\n${r2.data.text||''}`)}const txt=texts.join('\n');const candidates=unique((txt.match(/[A-Z0-9][A-Z0-9._/-]{2,}/gi)||[]).concat(txt.match(/\b\d{3,}(?:[-/.][A-Z0-9]+)*\b/g)||[]));$('ocrCandidates').value=candidates.join(', ');$('ocrRawText').value=txt;$('ocrStatus').textContent=`Lectura terminada: se analizaron ${files.length} imagen(es), con dos pasadas por imagen. Revisa y corrige los SKU detectados y pulsa “Confirmar códigos y buscar reclamaciones”.` ;showMatches(candidates,txt)}catch(err){$('ocrStatus').textContent='No fue posible ejecutar OCR automáticamente. Usa la captura manual de SKU. Detalle: '+err.message;$('manualBox').classList.remove('hidden')}};
 load();clearForm();render();
+try{
+ if(!window.supabase||!window.supabase.createClient)throw new Error('No se pudo cargar la biblioteca de conexión. Recarga la página.');
+ cloudClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+ $('cloudLogin').addEventListener('submit',async e=>{e.preventDefault();$('cloudMessage').textContent='Validando acceso…';const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){$('cloudMessage').textContent='No se pudo iniciar sesión: '+error.message;return}cloudUser=data.user;$('cloudMessage').textContent='Acceso correcto.';await startCloudSession()});
+ $('cloudLogout').addEventListener('click',async()=>{await cloudClient.auth.signOut();cloudUser=null;lastCloudJson='';$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden');$('cloudMessage').textContent='Sesión cerrada.'});
+ cloudClient.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){cloudUser=null;$('cloudGate').classList.remove('hidden');$('appShell').classList.add('hidden')}});
+ startCloudSession();window.addEventListener('focus',()=>syncFromCloud());document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncFromCloud()});setInterval(()=>syncFromCloud(),20000);
+}catch(err){$('cloudMessage').textContent='No se pudo inicializar la conexión: '+err.message}
+
 </script>
 <script>
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {

@@ -183,13 +183,10 @@ async function syncFromCloud(){
   localStorage.setItem(KEY,JSON.stringify(db));
   render();
   const snapshot=JSON.stringify(db);
-  if(snapshot!==JSON.stringify(remote)){
-   setSyncStatus('Actualizando registros en Supabase…');
-   const {error:writeError}=await cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:db,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id');
-   if(writeError)throw writeError;
-  }
-  lastCloudJson=snapshot;
-  setSyncStatus('Conectado y sincronizado · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
+  // Polling is read-only. Only explicit local saves write to Supabase;
+  // otherwise polling can cause write loops and overwrite concurrent changes.
+  lastCloudJson=JSON.stringify(remote);
+  setSyncStatus('Nube consultada · '+new Date().toLocaleTimeString()+' · '+db.claims.length+' reclamaciones');
  }catch(err){
   setSyncStatus('Error al leer Supabase: '+(err.message||String(err))+' · los datos locales se conservan.',true);
  }finally{
@@ -204,7 +201,7 @@ async function startCloudSession(){
 }
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function today(){return new Date().toISOString().slice(0,10)}
-function nextFolio(){let max=db.claims.reduce((m,c)=>Math.max(m,Number((c.folio||'').replace(/\D/g,''))||0),0);return 'REC-'+String(max+1).padStart(5,'0')}
+function nextFolio(){const d=new Date();const stamp=[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0'),String(d.getHours()).padStart(2,'0'),String(d.getMinutes()).padStart(2,'0'),String(d.getSeconds()).padStart(2,'0')].join('');const rand=Math.random().toString(36).slice(2,6).toUpperCase();return 'REC-'+stamp+'-'+rand}
 function normalizeSku(s){return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'')}
 function unique(a){return [...new Set(a.filter(Boolean))]}
 function allSkus(){return unique([...db.catalog.map(x=>x.sku),...db.claims.map(x=>x.sku)])}

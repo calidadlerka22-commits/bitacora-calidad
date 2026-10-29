@@ -131,12 +131,19 @@ function mergeData(a,b){
  return {claims,catalog:[...catalog.values()]};
 }
 function queueCloudSave(){
- if(!cloudClient||!cloudUser||cloudBusy)return;
- const snapshot=JSON.stringify(db);if(snapshot===lastCloudJson)return;
- cloudBusy=true;setSyncStatus('Guardando cambios en la nube…');
- cloudClient.from(CLOUD_TABLE).upsert({id:1,payload:db,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').then(({error})=>{
-  cloudBusy=false;if(error){setSyncStatus('Error al sincronizar: '+error.message+'. Los cambios siguen guardados localmente; revisa la configuración SQL.',true);return}
-  lastCloudJson=JSON.stringify(db);setSyncStatus('Sincronizado con Supabase · '+new Date().toLocaleTimeString());if(JSON.stringify(db)!==lastCloudJson)queueCloudSave();
+ if(!cloudClient||!cloudUser)return;
+ const snapshot=JSON.stringify(db);
+ if(cloudBusy)return;
+ if(snapshot===lastCloudJson)return;
+ cloudBusy=true;
+ setSyncStatus('Guardando cambios en la nube…');
+ const payload=JSON.parse(snapshot);
+ cloudClient.from(CLOUD_TABLE).upsert({id:1,payload,updated_at:new Date().toISOString(),updated_by:cloudUser.id}).select('id').then(({error})=>{
+  cloudBusy=false;
+  if(error){setSyncStatus('Error al sincronizar: '+error.message+'. Los cambios siguen guardados localmente; revisa la configuración SQL.',true);return}
+  lastCloudJson=snapshot;
+  if(JSON.stringify(db)!==snapshot){setSyncStatus('Hay cambios nuevos; guardando pendientes…');queueCloudSave()}
+  else setSyncStatus('Sincronizado con Supabase · '+new Date().toLocaleTimeString());
  }).catch(err=>{cloudBusy=false;setSyncStatus('No se pudo sincronizar. Los cambios siguen en este dispositivo: '+err.message,true)});
 }
 async function syncFromCloud(){

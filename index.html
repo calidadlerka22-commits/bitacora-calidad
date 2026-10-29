@@ -125,28 +125,16 @@ function stableJson(value){
  return JSON.stringify(value);
 }
 function syncFingerprint(value){
- // Compara contenido funcional, no el orden ni duplicados históricos de la tabla.
- const claimsById=new Map();
- for(const item of (value?.claims||[])){
-  if(!item||!item.folio)continue;
-  const k=String(item.folio).trim().toUpperCase();
-  const prev=claimsById.get(k);
-  const pt=Date.parse(prev?._updatedAt||prev?.updated_at||'')||0;
-  const nt=Date.parse(item._updatedAt||item.updated_at||'')||0;
-  if(!prev||nt>=pt)claimsById.set(k,item);
- }
- const skuById=new Map();
- for(const item of (value?.catalog||[])){
-  if(!item||!item.sku)continue;
-  const k=normalizeSku(item.sku);
-  if(k&&!skuById.has(k))skuById.set(k,item);
- }
- const src=JSON.parse(JSON.stringify({
-  claims:[...claimsById.values()].sort((a,b)=>String(a.folio).localeCompare(String(b.folio))),
-  catalog:[...skuById.values()].sort((a,b)=>normalizeSku(a.sku).localeCompare(normalizeSku(b.sku))),
-  _resetToken:value?._resetToken||''
- }));
- return stableJson(src);
+ const claims=new Set((value?.claims||[]).filter(x=>x?.folio).map(x=>String(x.folio).trim().toUpperCase()));
+ const skus=new Set((value?.catalog||[]).filter(x=>x?.sku).map(x=>normalizeSku(x.sku)).filter(Boolean));
+ return stableJson({claims:[...claims].sort(),catalog:[...skus].sort(),_resetToken:value?._resetToken||''});
+}
+function syncCoverage(sent,received){
+ const remoteClaims=new Set((received?.claims||[]).map(x=>String(x?.folio||'').trim().toUpperCase()));
+ const remoteSkus=new Set((received?.catalog||[]).map(x=>normalizeSku(x?.sku)).filter(Boolean));
+ const missingClaims=(sent?.claims||[]).filter(x=>x?.folio&&!remoteClaims.has(String(x.folio).trim().toUpperCase())).map(x=>x.folio);
+ const missingSkus=(sent?.catalog||[]).filter(x=>x?.sku&&!remoteSkus.has(normalizeSku(x.sku))).map(x=>x.sku);
+ return {ok:missingClaims.length===0&&missingSkus.length===0,missingClaims,missingSkus};
 }
 function mergeData(a,b){
  const byFolio=new Map();
@@ -192,7 +180,8 @@ async function queueCloudSave(){
   const {data:checkRow,error:checkError}=await cloudClient.from(CLOUD_TABLE).select('payload').eq('id',1).single();
   if(checkError)throw checkError;
   const confirmed=checkRow?.payload||{claims:[],catalog:[]};
-  if(syncFingerprint(confirmed)!==wanted)throw new Error('Supabase respondió, pero la verificación encontró diferencias. No se confirmó la sincronización.');
+  const coverage=syncCoverage(db,confirmed);
+  if(!coverage.ok)throw new Error('La nube no confirmó '+[...coverage.missingClaims.map(x=>'folio '+x),...coverage.missingSkus.map(x=>'SKU '+x)].slice(0,8).join(', ')+'. Los datos locales se conservaron.');
   db=mergeData(confirmed,db);localStorage.setItem(KEY,JSON.stringify(db));render();
   lastCloudJson=syncFingerprint(confirmed);
   setSyncStatus('Sincronización verificada · '+new Date().toLocaleTimeString()+' · '+confirmed.claims.length+' reclamaciones en la nube');
@@ -236,11 +225,10 @@ async function syncFromCloud(){
    if(syncFingerprint(confirmed)===wanted)break;
    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));
   }
-  const confirmedFingerprint=syncFingerprint(confirmed);
-  if(confirmedFingerprint!==wanted){
-   const cloudFolios=new Set((confirmed.claims||[]).map(x=>String(x.folio||'').trim().toUpperCase()));
-   const missing=(db.claims||[]).filter(x=>!cloudFolios.has(String(x.folio||'').trim().toUpperCase())).map(x=>x.folio);
-   throw new Error(missing.length?'La nube aún no contiene estos folios: '+missing.slice(0,5).join(', '):'La nube tiene cambios distintos para uno o más folios. Se conservaron los datos locales.');
+  const coverage=syncCoverage(db,confirmed);
+  if(!coverage.ok){
+   const details=[...coverage.missingClaims.map(x=>'folio '+x),...coverage.missingSkus.map(x=>'SKU '+x)];
+   throw new Error('La nube todavía no confirma: '+details.slice(0,8).join(', ')+'. No se borraron los datos locales.');
   }
   // La copia confirmada de la nube pasa a ser la base local compartida.
   db={claims:confirmed.claims||[],catalog:confirmed.catalog||[],_resetToken:confirmed._resetToken||''};
